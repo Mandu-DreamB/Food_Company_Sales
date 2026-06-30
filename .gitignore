@@ -1,0 +1,64 @@
+# Mandu 작업 영역
+/mandu
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.whl
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env/
+ENV/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*.ipynb~
+
+# Data files
+*.csv
+*.json
+*.parquet
+*.feather
+*.pickle
+*.pkl
+*.h5
+*.hdf5
+data/
+datasets/
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Distribution / packaging
+*.tar.gz
+*.zip
