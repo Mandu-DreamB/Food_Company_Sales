@@ -10,11 +10,22 @@
   padding-bottom: 24px;
 }
 
+.sidebar-back {
+  display: block;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  padding: 16px 20px 0;
+}
+
+.sidebar-back:hover {
+  color: var(--text-secondary);
+}
+
 .sidebar-home {
   display: block;
   font-weight: 700;
   font-size: 16px;
-  padding: 20px 20px 12px;
+  padding: 8px 20px 12px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 8px;
 }
@@ -196,4 +207,120 @@
   margin-top: 16px;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.landing-page {
+  width: 100%;
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 64px 32px 100px;
+}
+
+.landing-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.landing-eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #1baf7a;
+  margin-bottom: 10px;
+}
+
+.landing-header h1 {
+  font-size: 26px;
+  margin: 0;
+}
+
+.landing-tabs {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 28px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 32px;
+  padding-bottom: 0;
+}
+
+.landing-tab {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-muted);
+  padding: 0 2px 12px;
+  border-bottom: 2px solid transparent;
+}
+
+.landing-tab:hover {
+  color: var(--text-secondary);
+}
+
+.landing-tab.active {
+  color: var(--text-primary);
+  font-weight: 700;
+  border-bottom-color: #1baf7a;
+}
+
+.affiliate-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.affiliate-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 28px 20px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.affiliate-card:hover {
+  border-color: var(--baseline);
+  box-shadow: 0 4px 16px rgba(11, 11, 11, 0.06);
+}
+
+.affiliate-card-logo {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: 0.03em;
+  color: var(--text-primary);
+}
+
+.affiliate-card-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.affiliate-card-tag {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  background: var(--page-plane);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+@media (max-width: 800px) {
+  .affiliate-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .affiliate-grid {
+    grid-template-columns: 1fr;
+  }
 }

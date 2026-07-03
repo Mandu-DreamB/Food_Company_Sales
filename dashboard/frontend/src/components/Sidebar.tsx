@@ -20,7 +20,10 @@ export function Sidebar() {
 
   return (
     <nav className="sidebar">
-      <NavLink to="/" className="sidebar-home" end>
+      <NavLink to="/" className="sidebar-back">
+        ← 계열사 목록
+      </NavLink>
+      <NavLink to="/dashboard" className="sidebar-home" end>
         지표 대시보드
       </NavLink>
       {categories.map((category) => (
