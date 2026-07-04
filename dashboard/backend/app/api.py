@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException
 
 from .config import missing_env
 from .registry import INDICATORS, INDICATORS_BY_ID
-from .cache import read_cache, read_stale_cache, write_cache
+from .store import read_cache, read_stale_cache, write_cache
 from .schemas import IndicatorResult
 
 router = APIRouter(prefix="/api")
