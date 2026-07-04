@@ -59,6 +59,3 @@ logs/
 # Distribution / packaging
 *.tar.gz
 *.zip
-
-# Project folders
-mandu/
