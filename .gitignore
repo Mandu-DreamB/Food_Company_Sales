@@ -29,7 +29,6 @@ ENV/
 
 # Data files
 *.csv
-*.json
 *.parquet
 *.feather
 *.pickle
@@ -38,6 +37,13 @@ ENV/
 *.hdf5
 data/
 datasets/
+!dashboard/**/package.json
+!dashboard/**/package-lock.json
+!dashboard/**/tsconfig*.json
+
+# Node
+node_modules/
+dist/
 
 # IDE
 .vscode/
