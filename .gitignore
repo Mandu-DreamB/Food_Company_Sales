@@ -1,6 +1,3 @@
-# Mandu 작업 영역
-/mandu
-
 # Python
 __pycache__/
 *.py[cod]
