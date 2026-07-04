@@ -12,7 +12,23 @@ dashboard/
   frontend/   React(Vite) 대시보드 UI
 ```
 
-## 1. 백엔드 실행
+## 1. PostgreSQL 준비
+
+로컬에 설치된 PostgreSQL에 이 프로젝트 전용 DB/계정을 만듭니다 (Windows 예시).
+
+```powershell
+& "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres
+```
+
+```sql
+CREATE DATABASE samyang_dashboard;
+CREATE USER dashboard_app WITH PASSWORD '원하는비밀번호';
+GRANT ALL PRIVILEGES ON DATABASE samyang_dashboard TO dashboard_app;
+\c samyang_dashboard
+GRANT ALL ON SCHEMA public TO dashboard_app;
+```
+
+## 2. 백엔드 실행
 
 ```bash
 cd dashboard/backend
@@ -21,12 +37,14 @@ python -m venv .venv
 pip install -r requirements.txt
 
 cp .env.example .env
-# .env를 열어 보유한 API 키를 채워 넣습니다 (아래 참고)
+# .env를 열어 DATABASE_URL과 보유한 API 키를 채워 넣습니다 (아래 참고)
+# DATABASE_URL=postgresql+psycopg://dashboard_app:원하는비밀번호@localhost:5432/samyang_dashboard
 
 uvicorn app.main:app --reload --port 8000
 ```
 
-키를 하나도 넣지 않아도 서버는 정상적으로 뜨고, `yfinance`(글로벌 시장지표),
+서버가 처음 뜰 때 필요한 테이블(`indicator_points`, `indicator_fetch_log`)을 자동으로
+생성합니다. API 키를 하나도 넣지 않아도 서버는 정상적으로 뜨고, `yfinance`(글로벌 시장지표),
 FAO 식품가격지수, 자동차 수출액(e-나라지표)은 키 없이 바로 조회됩니다. 나머지 지표는
 `.env`에 해당 키를 채운 뒤 다시 조회하면 자동으로 정상 상태로 바뀝니다.
 
@@ -41,7 +59,7 @@ FAO 식품가격지수, 자동차 수출액(e-나라지표)은 키 없이 바로
 | `FRED_API_KEY` | https://fred.stlouisfed.org/docs/api/api_key.html | FOMC 점도표 |
 | `REALTY_API_KEY` | https://www.reb.or.kr/r-one/ | 주택가격지수, 주택거래량 |
 
-## 2. 프론트엔드 실행
+## 3. 프론트엔드 실행
 
 ```bash
 cd dashboard/frontend
@@ -54,11 +72,11 @@ npm run dev
 
 ## 동작 방식
 
-- 지표 목록(`/api/sources`)은 캐시 파일 존재 여부와 `.env` 키 유무만 확인하며, 네트워크 호출을
-  하지 않습니다 (사이드바/카드 목록이 빠르게 뜨는 이유).
-- 지표 상세(`/api/sources/{id}`)에 들어가야 실제로 API를 호출하고, 결과를
-  `backend/app/.cache/{id}.json`에 저장합니다. 이후 요청은 TTL(일별 6시간, 그 외 24시간) 동안
-  캐시를 재사용합니다.
+- 지표 목록(`/api/sources`)은 DB의 `indicator_fetch_log` 존재 여부와 `.env` 키 유무만
+  확인하며, 외부 API 호출을 하지 않습니다 (사이드바/카드 목록이 빠르게 뜨는 이유).
+- 지표 상세(`/api/sources/{id}`)에 들어가야 실제로 외부 API를 호출하고, 결과를 PostgreSQL의
+  `indicator_points`(시계열 값) / `indicator_fetch_log`(수집 상태) 테이블에 저장합니다.
+  이후 요청은 TTL(일별 지표 6시간, 그 외 24시간) 동안 DB에 저장된 값을 재사용합니다.
 - 상세 페이지의 "새로고침" 버튼 또는 `?refresh=true` 쿼리로 캐시를 무시하고 즉시 재수집할 수
   있습니다.
 - API 호출이 실패해도 서버는 죽지 않고 `status: "error"`와 마지막으로 성공한 캐시 데이터를 함께

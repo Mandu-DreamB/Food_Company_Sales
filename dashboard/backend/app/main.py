@@ -1,9 +1,19 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api import router
+from .db import Base, engine
+from . import models  # noqa: F401  (Base.metadata에 테이블 등록)
 
-app = FastAPI(title="지표 대시보드 API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Base.metadata.create_all(bind=engine)
+    yield
+
+
+app = FastAPI(title="지표 대시보드 API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
