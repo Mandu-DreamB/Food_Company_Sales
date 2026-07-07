@@ -40,6 +40,7 @@ datasets/
 !dashboard/**/package.json
 !dashboard/**/package-lock.json
 !dashboard/**/tsconfig*.json
+!dashboard/frontend/src/data/
 
 # Node
 node_modules/
