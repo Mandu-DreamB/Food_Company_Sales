@@ -15,10 +15,10 @@ export function IndicatorDetail() {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(
-    (refresh: boolean) => {
+    (isReload: boolean) => {
       if (!id) return;
-      (refresh ? setRefreshing : setLoading)(true);
-      getSource(id, refresh)
+      (isReload ? setRefreshing : setLoading)(true);
+      getSource(id)
         .then((data) => {
           setSource(data);
           setError(null);
@@ -51,7 +51,7 @@ export function IndicatorDetail() {
           </p>
         </div>
         <button className="refresh-button" onClick={() => load(true)} disabled={refreshing}>
-          {refreshing ? "새로고침 중..." : "새로고침"}
+          {refreshing ? "불러오는 중..." : "다시 불러오기"}
         </button>
       </div>
 
