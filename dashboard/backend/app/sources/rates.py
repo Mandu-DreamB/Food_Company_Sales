@@ -42,7 +42,14 @@ def fetch_household_credit() -> list[dict]:
     df["date"] = pd.PeriodIndex(df["TIME"], freq="Q").to_timestamp()
     df["value"] = pd.to_numeric(df["DATA_VALUE"], errors="coerce")
 
-    return series_from_long(df, "date", "ITEM_NAME1", "value")
+    # ECOS가 서로 다른 ITEM_CODE1에 동일한 ITEM_NAME1(예: "여신전문기관")을 붙여 내려줄 때가 있어
+    # 이름만으로 묶으면 같은 날짜에 시리즈 이름이 충돌한다. 이름이 겹치는 항목만 코드를 붙여 구분한다.
+    codes_per_name = df.groupby("ITEM_NAME1")["ITEM_CODE1"].transform("nunique")
+    df["series_name"] = df["ITEM_NAME1"].where(
+        codes_per_name <= 1, df["ITEM_NAME1"] + "(" + df["ITEM_CODE1"] + ")"
+    )
+
+    return series_from_long(df, "date", "series_name", "value")
 
 
 MONTHLY_MACRO_SPECS = [

@@ -46,7 +46,7 @@ def fetch_household_income_growth() -> list[dict]:
     df["소득항목"] = df["C2"].map(INCOME_ITEMS)
     df["실질금액"] = pd.to_numeric(df["DT"], errors="coerce")
     df["quarter"] = df["PRD_DE"].str[:4] + "Q" + df["PRD_DE"].str[4:].astype(int).astype(str)
-    df["date"] = pd.PeriodIndex(df["quarter"], freq="Q").dt.to_timestamp()
+    df["date"] = pd.PeriodIndex(df["quarter"], freq="Q").to_timestamp()
     df = df.sort_values(["소득항목", "date"])
     df["실질증감률"] = df.groupby("소득항목")["실질금액"].pct_change(4) * 100
     df = df.dropna(subset=["실질증감률"])

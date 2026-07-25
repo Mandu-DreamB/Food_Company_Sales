@@ -8,8 +8,8 @@ export async function listSources(): Promise<IndicatorResult[]> {
   return res.json();
 }
 
-export async function getSource(id: string, refresh = false): Promise<IndicatorResult> {
-  const res = await fetch(`${BASE_URL}/api/sources/${id}${refresh ? "?refresh=true" : ""}`);
+export async function getSource(id: string): Promise<IndicatorResult> {
+  const res = await fetch(`${BASE_URL}/api/sources/${id}`);
   if (!res.ok) throw new Error(`지표를 불러오지 못했습니다 (${res.status})`);
   return res.json();
 }

@@ -5,7 +5,7 @@ from .db import SessionLocal
 from .models import IndicatorPoint, IndicatorFetchLog
 
 
-def _load(session, indicator_id: str, fetched_at: datetime) -> dict:
+def _load(session, indicator_id: str, log: IndicatorFetchLog) -> dict:
     rows = session.scalars(
         select(IndicatorPoint).where(IndicatorPoint.indicator_id == indicator_id)
     ).all()
@@ -21,10 +21,16 @@ def _load(session, indicator_id: str, fetched_at: datetime) -> dict:
         for name, points in series_map.items()
     ]
 
-    return {"series": series, "fetched_at": fetched_at.isoformat()}
+    return {
+        "series": series,
+        "fetched_at": log.fetched_at.isoformat(),
+        "status": log.status,
+        "error": log.error,
+    }
 
 
 def read_cache(indicator_id: str, ttl_seconds: int) -> dict | None:
+    """TTL 이내의 캐시만 반환. 스케줄러가 재수집 여부를 판단할 때 사용."""
     with SessionLocal() as session:
         log = session.get(IndicatorFetchLog, indicator_id)
         if log is None:
@@ -34,21 +40,36 @@ def read_cache(indicator_id: str, ttl_seconds: int) -> dict | None:
         if age > ttl_seconds:
             return None
 
-        return _load(session, indicator_id, log.fetched_at)
+        return _load(session, indicator_id, log)
 
 
 def read_stale_cache(indicator_id: str) -> dict | None:
+    """TTL과 무관하게 DB에 있는 마지막 수집 결과(시계열 포함)를 반환. 지표 상세 조회에서만 사용."""
     with SessionLocal() as session:
         log = session.get(IndicatorFetchLog, indicator_id)
         if log is None:
             return None
 
-        return _load(session, indicator_id, log.fetched_at)
+        return _load(session, indicator_id, log)
 
 
-def write_cache(indicator_id: str, series: list[dict], fetched_at_iso: str, fetched_at_epoch: float) -> None:
-    fetched_at = datetime.fromtimestamp(fetched_at_epoch, tz=timezone.utc)
+def read_all_logs() -> dict[str, dict]:
+    """모든 지표의 상태(status/error/fetched_at)만 단일 쿼리로 반환. 시계열 포인트는 읽지 않는다.
+    목록 화면은 포인트가 필요 없는데도 지표마다 DB를 왕복하면 N+1이 되어 느려지므로, 목록 조회는
+    반드시 이 함수로 한 번에 처리한다."""
+    with SessionLocal() as session:
+        logs = session.scalars(select(IndicatorFetchLog)).all()
+        return {
+            log.indicator_id: {
+                "status": log.status,
+                "error": log.error,
+                "fetched_at": log.fetched_at.isoformat(),
+            }
+            for log in logs
+        }
 
+
+def write_cache(indicator_id: str, series: list[dict], fetched_at: datetime) -> None:
     with SessionLocal() as session:
         session.execute(delete(IndicatorPoint).where(IndicatorPoint.indicator_id == indicator_id))
 
@@ -70,4 +91,19 @@ def write_cache(indicator_id: str, series: list[dict], fetched_at_iso: str, fetc
             set_={"fetched_at": fetched_at, "status": "ok", "error": None},
         )
         session.execute(stmt)
+        session.commit()
+
+
+def write_error(indicator_id: str, error: str, attempted_at: datetime) -> None:
+    """수집 실패 기록. IndicatorPoint(과거 데이터)와 마지막 '성공' 시각(fetched_at)은 건드리지 않고
+    상태만 error로 남긴다. 아직 한 번도 성공한 적이 없으면 시도 시각을 기록해 not_fetched와 구분한다."""
+    with SessionLocal() as session:
+        log = session.get(IndicatorFetchLog, indicator_id)
+        if log is None:
+            session.add(IndicatorFetchLog(
+                indicator_id=indicator_id, fetched_at=attempted_at, status="error", error=error,
+            ))
+        else:
+            log.status = "error"
+            log.error = error
         session.commit()
