@@ -18,6 +18,23 @@ class IndicatorPoint(Base):
     )
 
 
+class Affiliate(Base):
+    """삼양그룹 계열사 1곳 (랜딩 페이지의 계열사 카드 1장).
+
+    프론트에 하드코딩돼 있던 AFFILIATES/CATEGORIES를 대체한다. 탭(카테고리)과 카드의 노출 순서까지
+    DB가 결정할 수 있도록 category_order/sort_order를 함께 둔다.
+    """
+
+    __tablename__ = "affiliates"
+
+    id = Column(String, primary_key=True)  # 슬러그. 프론트 라우팅 키로 그대로 쓴다.
+    name = Column(String, nullable=False)
+    category = Column(String, nullable=False, index=True)
+    category_order = Column(Integer, nullable=False)
+    logo_text = Column(String, nullable=False)
+    sort_order = Column(Integer, nullable=False)
+
+
 class IndicatorFetchLog(Base):
     """지표별 마지막 수집 시각/상태 (TTL 캐시 판단 + 대시보드 상태 표시용)."""
 

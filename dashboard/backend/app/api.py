@@ -2,10 +2,20 @@ from fastapi import APIRouter, HTTPException
 
 from .config import missing_env
 from .registry import INDICATORS, INDICATORS_BY_ID, Indicator
-from .store import read_all_logs, read_stale_cache
-from .schemas import IndicatorResult
+from .store import read_affiliates, read_all_logs, read_stale_cache
+from .schemas import AffiliateList, IndicatorResult
 
 router = APIRouter(prefix="/api")
+
+
+@router.get("/affiliates", response_model=AffiliateList)
+def list_affiliates():
+    rows = read_affiliates()
+    # 탭 순서는 category_order가 정한다. dict가 삽입 순서를 유지하므로 중복 제거와 정렬이 한 번에 끝난다.
+    categories = list(dict.fromkeys(
+        row["category"] for row in sorted(rows, key=lambda r: r["category_order"])
+    ))
+    return AffiliateList(categories=categories, affiliates=rows)
 
 
 def _result(

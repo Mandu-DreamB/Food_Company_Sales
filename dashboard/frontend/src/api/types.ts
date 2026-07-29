@@ -1,3 +1,15 @@
+export interface Affiliate {
+  id: string;
+  name: string;
+  category: string;
+  logo_text: string;
+}
+
+export interface AffiliateList {
+  categories: string[];
+  affiliates: Affiliate[];
+}
+
 export interface Point {
   date: string;
   value: number | null;

@@ -1,13 +1,27 @@
-import { useState } from "react";
-import { AFFILIATES, CATEGORIES } from "../data/affiliates";
+import { useEffect, useState } from "react";
+import { listAffiliates } from "../api/client";
+import type { AffiliateList } from "../api/types";
 import { AffiliateCard } from "../components/AffiliateCard";
 
-const TABS = ["전체", ...CATEGORIES];
-
 export function CompanyLanding() {
+  const [data, setData] = useState<AffiliateList | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("전체");
 
-  const visible = activeTab === "전체" ? AFFILIATES : AFFILIATES.filter((a) => a.category === activeTab);
+  useEffect(() => {
+    listAffiliates()
+      .then(setData)
+      .catch((err) => setError(err.message));
+  }, []);
+
+  if (error) return <div className="page-state error">{error}</div>;
+  if (!data) return <div className="page-state">불러오는 중...</div>;
+
+  const tabs = ["전체", ...data.categories];
+  const visible =
+    activeTab === "전체"
+      ? data.affiliates
+      : data.affiliates.filter((a) => a.category === activeTab);
 
   return (
     <div className="landing-page">
@@ -17,7 +31,7 @@ export function CompanyLanding() {
       </div>
 
       <div className="landing-tabs">
-        {TABS.map((tab) => (
+        {tabs.map((tab) => (
           <button
             key={tab}
             className={"landing-tab" + (tab === activeTab ? " active" : "")}

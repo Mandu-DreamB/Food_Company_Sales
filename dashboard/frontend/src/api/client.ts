@@ -1,6 +1,12 @@
-import type { IndicatorResult } from "./types";
+import type { AffiliateList, IndicatorResult } from "./types";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+
+export async function listAffiliates(): Promise<AffiliateList> {
+  const res = await fetch(`${BASE_URL}/api/affiliates`);
+  if (!res.ok) throw new Error(`계열사 목록을 불러오지 못했습니다 (${res.status})`);
+  return res.json();
+}
 
 export async function listSources(): Promise<IndicatorResult[]> {
   const res = await fetch(`${BASE_URL}/api/sources`);
