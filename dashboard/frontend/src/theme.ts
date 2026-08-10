@@ -1,12 +1,14 @@
+// 이 순서는 장식이 아니라 색맹 안전성의 핵심 장치다 — 인접한 두 슬롯이 항상 구분 가능하도록
+// 검증된 순서다 (validate_palette.js 통과). 색을 바꾸거나 순서를 섞으면 재검증이 필요하다.
 export const CATEGORICAL_COLORS = [
-  "#2a78d6", // blue
-  "#1baf7a", // aqua
-  "#eda100", // yellow
-  "#008300", // green
-  "#4a3aa7", // violet
-  "#e34948", // red
-  "#e87ba4", // magenta
-  "#eb6834", // orange
+  "#2a78d6", // 1 blue
+  "#eb6834", // 2 orange
+  "#1baf7a", // 3 aqua
+  "#eda100", // 4 yellow
+  "#e87ba4", // 5 magenta
+  "#008300", // 6 green
+  "#4a3aa7", // 7 violet
+  "#e34948", // 8 red
 ];
 
 export function colorForIndex(index: number): string {
