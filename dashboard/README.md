@@ -84,3 +84,8 @@ npm run dev
   있습니다.
 - API 호출이 실패해도 서버는 죽지 않고 `status: "error"`와 마지막으로 성공한 캐시 데이터를 함께
   돌려줍니다.
+문제점
+1. 챗봇에서 RAG의 내장 벡터DB도 RENDER에 따로 배포를 해야함(유료배포)
+
+# 삼양사 x 경제지표 매출관계
+https://claude.ai/code/artifact/64eec523-94a0-4b32-9bdb-551a254a11ba
