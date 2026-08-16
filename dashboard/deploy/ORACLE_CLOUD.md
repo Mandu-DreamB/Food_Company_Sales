@@ -77,13 +77,63 @@ https://www.oracle.com/kr/cloud/free/ → "무료로 시작하기"
 | Public IPv4 | 할당 | |
 | SSH key | 새로 생성 → 개인키 다운로드 | 잃어버리면 접속 불가 |
 
-> **"Out of capacity" 에러**가 자주 납니다. Always Free의 A1은 인기가 많아 물량이 없을 때가 많습니다.
+> **"Out of capacity" 에러**는 Create 버튼을 누르는 순간에 납니다 (설정 문제가 아닙니다). Always Free의 A1은 인기가 많아 물량이 없을 때가 많습니다.
 > 해결: 가용 도메인(AD-1/2/3)을 바꿔가며 재시도, 시간대를 바꿔 재시도, 그래도 안 되면 다른 리전.
 > **"업그레이드하면 됩니다"라는 안내가 뜨는데 누르지 마세요.** 그게 과금 시작점입니다.
-> A1을 끝내 못 받으면 → 로컬 + Cloudflare Tunnel(README의 A절)로 버티거나 유료 VPS를 고려하세요.
-> (AMD 마이크로 무료 인스턴스는 RAM 1GB라 이 스택엔 부족합니다.)
+> A1이 계속 안 잡히면 → **아래 "A1 대신 E2.1.Micro로 가기"** 로 진행하세요.
 
 인스턴스 생성 후 **공인 IP를 메모**해 두세요. 아래에서 `<서버IP>`로 씁니다.
+
+## 3-B. A1 대신 E2.1.Micro로 가기
+
+Ampere A1은 무료 물량이 인기가 많아 몇 시간~며칠씩 안 잡히기도 합니다. 기다리기 싫으면
+**VM.Standard.E2.1.Micro** (AMD x86, 1 OCPU / 1GB)로 가면 됩니다. 거의 항상 여유가 있습니다.
+
+1GB가 부족해 보이지만, 이 스택의 실측 사용량은 **약 270MB**입니다:
+
+| 컨테이너 | 메모리 |
+|---|---|
+| backend (FastAPI) | 137 MB |
+| minio | 75 MB |
+| postgres | 41 MB |
+| nginx | 15 MB |
+
+인스턴스 설정은 shape만 바뀌고 나머지(Ubuntu 24.04, public subnet, 공인 IP, 부트볼륨 50GB
+Balanced, SSH 키)는 동일합니다. Shape 선택에서 **AMD 탭 → VM.Standard.E2.1.Micro**,
+"Always Free-eligible" 배지를 확인하세요.
+
+### 추가로 해야 할 것 ①: swap 2GB
+
+메모리 여유가 적어 빌드 중 순간적으로 부족해질 수 있습니다. Docker 설치 전에 붙여두세요.
+
+```bash
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+free -h        # Swap: 2.0Gi 확인
+```
+
+### 추가로 해야 할 것 ②: micro 오버레이 사용
+
+`docker-compose.micro.yml`이 PostgreSQL 메모리 설정을 1GB에 맞게 조이고 컨테이너별 상한을 겁니다.
+**6장의 모든 `docker compose` 명령에 이 파일을 추가**하세요. 세션마다 한 번 지정해두면 편합니다:
+
+```bash
+export COMPOSE_FILE=docker-compose.yml:docker-compose.micro.yml
+echo 'export COMPOSE_FILE=docker-compose.yml:docker-compose.micro.yml' >> ~/.bashrc
+```
+
+이후에는 `docker compose up -d` 처럼 평소대로 쓰면 두 파일이 함께 적용됩니다.
+
+### 감수해야 할 점
+
+- **Docker 이미지 빌드가 10~20분** 걸립니다 (1/8 OCPU 버스트). 최초 1회만 그렇습니다.
+- 지표 수집 한 바퀴도 로컬(약 5분)보다 느립니다.
+- 실사용(대시보드 조회)은 DB 캐시를 읽는 것이라 체감 차이가 거의 없습니다.
+
+나중에 A1이 잡히면 새로 만들어 재배포하면 됩니다. 설정이 전부 코드로 있어 10분이면 끝납니다.
 
 ## 4. 방화벽 (두 군데를 다 열어야 합니다)
 

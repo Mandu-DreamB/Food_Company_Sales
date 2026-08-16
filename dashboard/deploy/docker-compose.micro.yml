@@ -1,0 +1,40 @@
+# VM.Standard.E2.1.Micro (1 OCPU / 1GB RAM) 전용 오버레이.
+# Ampere A1 용량이 안 잡힐 때 쓰는 무료 shape로, 메모리가 빠듯해 기본값을 조인다.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.micro.yml up -d
+#
+# 전제: 서버에 swap 2GB를 붙여둘 것 (ORACLE_CLOUD.md 참고).
+# 참고 실측치(로컬): backend 137MB + minio 75MB + postgres 41MB + nginx 15MB ≈ 270MB
+services:
+  postgres:
+    # 기본값(shared_buffers 128MB 등)은 1GB 머신엔 과하다.
+    command: >
+      postgres
+      -c shared_buffers=96MB
+      -c effective_cache_size=256MB
+      -c work_mem=4MB
+      -c maintenance_work_mem=32MB
+      -c max_connections=40
+    deploy:
+      resources:
+        limits:
+          memory: 224M
+
+  minio:
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+
+  backend:
+    # 지표 수집 시 pandas가 순간적으로 메모리를 쓴다. 여유를 크게 준다.
+    deploy:
+      resources:
+        limits:
+          memory: 448M
+
+  nginx:
+    deploy:
+      resources:
+        limits:
+          memory: 64M
