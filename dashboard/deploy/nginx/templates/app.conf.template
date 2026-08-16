@@ -1,0 +1,121 @@
+# envsubst가 ${API_DOMAIN} 같은 값만 치환한다. $host / $uri 등 nginx 변수는 그대로 남는다.
+
+# ---------------------------------------------------------------------------
+# 80: ACME(인증서 발급/갱신) 챌린지만 받고 나머지는 전부 HTTPS로 보낸다
+# ---------------------------------------------------------------------------
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${API_DOMAIN} ${MINIO_DOMAIN} ${MINIO_CONSOLE_DOMAIN};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# ---------------------------------------------------------------------------
+# 공통 SSL 설정
+# ---------------------------------------------------------------------------
+ssl_session_cache shared:SSL:10m;
+ssl_session_timeout 1d;
+ssl_protocols TLSv1.2 TLSv1.3;
+ssl_prefer_server_ciphers off;
+
+# ---------------------------------------------------------------------------
+# API: Vercel 프론트가 호출하는 FastAPI
+# ---------------------------------------------------------------------------
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name ${API_DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${CERT_NAME}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${CERT_NAME}/privkey.pem;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    # 지표 상세는 외부 API를 타므로 응답이 느릴 수 있다.
+    proxy_connect_timeout 10s;
+    proxy_send_timeout    120s;
+    proxy_read_timeout    120s;
+
+    location / {
+        proxy_pass http://backend:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # CORS 헤더는 FastAPI(CORSMiddleware)가 붙인다. 여기서 또 붙이면 중복돼서 깨진다.
+    }
+}
+
+# ---------------------------------------------------------------------------
+# MinIO S3 API (버킷 읽기/쓰기, boto3·mc가 붙는 주소)
+# ---------------------------------------------------------------------------
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name ${MINIO_DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${CERT_NAME}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${CERT_NAME}/privkey.pem;
+
+    # 대용량 업로드를 위해 크기 제한과 버퍼링을 끈다 (MinIO 권장 설정)
+    client_max_body_size 0;
+    ignore_invalid_headers off;
+    proxy_buffering off;
+    proxy_request_buffering off;
+    chunked_transfer_encoding off;
+
+    proxy_connect_timeout 300s;
+
+    location / {
+        proxy_pass http://minio:9000;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# ---------------------------------------------------------------------------
+# MinIO 웹 콘솔 (관리 UI)
+# ---------------------------------------------------------------------------
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name ${MINIO_CONSOLE_DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${CERT_NAME}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${CERT_NAME}/privkey.pem;
+
+    client_max_body_size 0;
+    ignore_invalid_headers off;
+    proxy_buffering off;
+    proxy_request_buffering off;
+    chunked_transfer_encoding off;
+
+    location / {
+        proxy_pass http://minio:9001;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # 콘솔은 WebSocket을 쓴다
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header X-NginX-Proxy true;
+    }
+}

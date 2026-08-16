@@ -1,4 +1,5 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime
 
@@ -33,9 +34,17 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="지표 대시보드 API", lifespan=lifespan)
 
+# 배포 환경마다 프론트 오리진이 다르므로 .env로 덮어쓸 수 있게 둔다.
+# 기본값: 로컬 개발 + Vercel(프로덕션/프리뷰 도메인) + Render
+DEFAULT_CORS_REGEX = (
+    r"http://(localhost|127\.0\.0\.1):\d+"
+    r"|https://.*\.vercel\.app"
+    r"|https://.*\.onrender\.com"
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+|https://.*\.onrender\.com",
+    allow_origin_regex=os.getenv("CORS_ALLOW_ORIGIN_REGEX", "").strip() or DEFAULT_CORS_REGEX,
     allow_methods=["*"],
     allow_headers=["*"],
 )
