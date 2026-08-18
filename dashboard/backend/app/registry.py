@@ -4,6 +4,7 @@ from typing import Callable
 from .sources import energy, steel_wood, livestock_rice, market_yfinance, fao
 from .sources import rates, fomc, housing
 from .sources import prices_labor_kosis, consumption_kosis, construction_kosis, auto_kosis, airport_trade
+from .sources import samyang_stocks
 
 DAILY_TTL = 6 * 3600
 MONTHLY_TTL = 24 * 3600
@@ -87,6 +88,8 @@ INDICATORS: list[Indicator] = [
               "2020=100", "monthly", ["KOSIS_API_KEY"], MONTHLY_TTL, auto_kosis.fetch_auto_inventory_index),
     Indicator("incheon_airport_stats", "인천공항 항공통계 (인바운드/아웃바운드/중국발)", "무역·수출",
               "명, 편", "monthly", ["DATA_GO_KR_KEY"], MONTHLY_TTL, airport_trade.fetch_incheon_airport_stats),
+    Indicator("samyang_stock_prices", "삼양그룹 상장 계열사 주가 (삼양사/삼양패키징/삼양엔씨켐)", "계열사 주가",
+              "원", "daily", [], NO_KEY_TTL, samyang_stocks.fetch_samyang_stock_prices),
 ]
 
 INDICATORS_BY_ID = {ind.id: ind for ind in INDICATORS}
