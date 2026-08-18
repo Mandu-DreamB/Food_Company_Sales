@@ -2,7 +2,23 @@ from datetime import datetime, timezone
 from sqlalchemy import select, delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from .db import SessionLocal
-from .models import IndicatorPoint, IndicatorFetchLog
+from .models import Affiliate, IndicatorPoint, IndicatorFetchLog
+
+
+def read_affiliates() -> list[dict]:
+    """계열사 전체를 카드 노출 순서대로 반환. (scripts/seed_affiliates.py가 채워 둔 테이블)"""
+    with SessionLocal() as session:
+        rows = session.scalars(select(Affiliate).order_by(Affiliate.sort_order)).all()
+        return [
+            {
+                "id": row.id,
+                "name": row.name,
+                "category": row.category,
+                "category_order": row.category_order,
+                "logo_text": row.logo_text,
+            }
+            for row in rows
+        ]
 
 
 def _load(session, indicator_id: str, log: IndicatorFetchLog) -> dict:

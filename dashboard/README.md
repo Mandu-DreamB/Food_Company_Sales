@@ -72,6 +72,9 @@ npm run dev
 
 ## 동작 방식
 
+- 랜딩 페이지의 계열사 카드는 `/api/affiliates`가 DB의 `affiliates` 테이블을 읽어 내려줍니다.
+  계열사가 바뀌면 `backend/scripts/seed_affiliates.py`의 목록을 고치고 다시 실행하세요
+  (`python scripts/seed_affiliates.py`, 멱등).
 - 지표 목록(`/api/sources`)은 DB의 `indicator_fetch_log` 존재 여부와 `.env` 키 유무만
   확인하며, 외부 API 호출을 하지 않습니다 (사이드바/카드 목록이 빠르게 뜨는 이유).
 - 지표 상세(`/api/sources/{id}`)에 들어가야 실제로 외부 API를 호출하고, 결과를 PostgreSQL의
@@ -81,7 +84,8 @@ npm run dev
   있습니다.
 - API 호출이 실패해도 서버는 죽지 않고 `status: "error"`와 마지막으로 성공한 캐시 데이터를 함께
   돌려줍니다.
+문제점
+1. 챗봇에서 RAG의 내장 벡터DB도 RENDER에 따로 배포를 해야함(유료배포)
 
-
-  문제점
-  1. 챗봇에서 RAG의 내장 백터DB도 RENDER에 따로 배포를 해야함(유료배포)
+# 삼양사 x 경제지표 매출관계
+https://claude.ai/code/artifact/64eec523-94a0-4b32-9bdb-551a254a11ba
