@@ -37,6 +37,7 @@ ENV/
 *.hdf5
 data/
 datasets/
+!RAG/data/
 !dashboard/**/package.json
 !dashboard/**/package-lock.json
 !dashboard/**/tsconfig*.json
