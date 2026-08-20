@@ -3,6 +3,7 @@ import "./App.css";
 import { ChatWidget } from "./components/ChatWidget";
 import { DashboardLayout } from "./components/DashboardLayout";
 import { SourcesProvider } from "./context/SourcesContext";
+import { CompanyDashboard } from "./pages/CompanyDashboard";
 import { CompanyLanding } from "./pages/CompanyLanding";
 import { Dashboard } from "./pages/Dashboard";
 import { IndicatorDetail } from "./pages/IndicatorDetail";
@@ -14,6 +15,7 @@ function App() {
         <Route path="/" element={<CompanyLanding />} />
         <Route element={<DashboardLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/company/:affiliateId" element={<CompanyDashboard />} />
           <Route path="/indicator/:id" element={<IndicatorDetail />} />
         </Route>
       </Routes>

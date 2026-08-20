@@ -44,3 +44,16 @@ class IndicatorFetchLog(Base):
     fetched_at = Column(DateTime(timezone=True), nullable=False)
     status = Column(String, nullable=False)
     error = Column(Text, nullable=True)
+
+
+class AffiliateBriefing(Base):
+    """계열사 1곳의 최신 AI 브리핑 (관련 지표 최근 동향을 LLM이 요약한 텍스트).
+    지표 수집과 같은 이유로 요청 경로에서 생성하지 않고 스케줄러가 미리 채워 둔다."""
+
+    __tablename__ = "affiliate_briefings"
+
+    affiliate_id = Column(String, primary_key=True)
+    text = Column(Text, nullable=True)
+    generated_at = Column(DateTime(timezone=True), nullable=False)
+    status = Column(String, nullable=False)
+    error = Column(Text, nullable=True)

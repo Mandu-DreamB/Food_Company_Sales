@@ -26,6 +26,12 @@ class AffiliateList(BaseModel):
     affiliates: list[Affiliate]
 
 
+class BriefingResult(BaseModel):
+    status: str  # "ok" | "error" | "not_generated"
+    text: Optional[str] = None
+    generated_at: Optional[str] = None
+
+
 class IndicatorMeta(BaseModel):
     id: str
     title: str
