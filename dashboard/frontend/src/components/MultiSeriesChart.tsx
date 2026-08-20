@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
 import {
+  Area,
+  AreaChart,
   CartesianGrid,
   Legend,
   Line,
@@ -8,11 +10,12 @@ import {
   Tooltip,
   XAxis,
   YAxis,
+  type TooltipContentProps,
 } from "recharts";
 import type { Series } from "../api/types";
 import { colorForIndex } from "../theme";
 
-type ViewMode = "raw" | "indexed" | "grid" | "table";
+type OverlayMode = "raw" | "indexed" | "table";
 type RangeKey = "1y" | "5y" | "10y" | "all";
 
 interface ChartRow {
@@ -51,10 +54,9 @@ function indexSeries(series: Series[]): Series[] {
   });
 }
 
-const VIEW_LABELS: Record<ViewMode, string> = {
+const OVERLAY_LABELS: Record<OverlayMode, string> = {
   raw: "원본 비교",
   indexed: "변화율 비교",
-  grid: "개별 보기",
   table: "표로 보기",
 };
 
@@ -99,16 +101,47 @@ function ChartTooltip() {
   );
 }
 
+// 값 옆에 시리즈 색 점을 찍어주는 커스텀 툴팁 (원본/변화율 비교 차트 전용).
+function AreaTooltip({ active, payload, label }: TooltipContentProps) {
+  if (!active || !payload || payload.length === 0) return null;
+
+  return (
+    <div className="chart-tooltip">
+      <div className="chart-tooltip-label">{label}</div>
+      {payload.map((entry) => (
+        <div key={entry.dataKey as string} className="chart-tooltip-row">
+          <span className="chart-tooltip-dot" style={{ background: entry.color }} />
+          <span className="chart-tooltip-name">{String(entry.dataKey)}</span>
+          <span className="chart-tooltip-value">
+            {typeof entry.value === "number"
+              ? entry.value.toLocaleString("ko-KR", { maximumFractionDigits: 2 })
+              : "–"}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function OverlayChart({ data, series }: { data: ChartRow[]; series: Series[] }) {
   return (
-    <ResponsiveContainer width="100%" height={420}>
-      <LineChart data={data} margin={{ top: 8, right: 24, bottom: 8, left: 8 }}>
+    <ResponsiveContainer width="100%" height={380}>
+      <AreaChart data={data} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
+        <defs>
+          {series.map((s, i) => (
+            <linearGradient key={s.name} id={`chart-fill-${i}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={colorForIndex(i)} stopOpacity={0.32} />
+              <stop offset="95%" stopColor={colorForIndex(i)} stopOpacity={0.02} />
+            </linearGradient>
+          ))}
+        </defs>
         <CartesianGrid stroke="var(--gridline)" strokeDasharray="0" vertical={false} />
         <XAxis
           dataKey="date"
           stroke="var(--baseline)"
           tick={{ fill: "var(--text-muted)", fontSize: 12 }}
           tickLine={false}
+          axisLine={false}
           minTickGap={40}
         />
         <YAxis
@@ -118,23 +151,31 @@ function OverlayChart({ data, series }: { data: ChartRow[]; series: Series[] }) 
           axisLine={false}
           width={60}
         />
-        <ChartTooltip />
-        {series.length > 1 && <Legend wrapperStyle={{ fontSize: 13 }} />}
+        <Tooltip content={AreaTooltip} cursor={{ stroke: "var(--baseline)", strokeDasharray: "3 3" }} />
+        {series.length > 1 && <Legend iconType="square" wrapperStyle={{ fontSize: 13 }} />}
         {series.map((s, i) => (
-          <Line
+          <Area
             key={s.name}
             type="monotone"
             dataKey={s.name}
             stroke={colorForIndex(i)}
             strokeWidth={2}
+            fill={`url(#chart-fill-${i})`}
             dot={false}
             connectNulls
             isAnimationActive={false}
           />
         ))}
-      </LineChart>
+      </AreaChart>
     </ResponsiveContainer>
   );
+}
+
+function latestPoint(points: { date: string; value: number | null }[]) {
+  for (let i = points.length - 1; i >= 0; i--) {
+    if (points[i].value != null) return points[i];
+  }
+  return null;
 }
 
 function SeriesGrid({ series }: { series: Series[] }) {
@@ -142,10 +183,19 @@ function SeriesGrid({ series }: { series: Series[] }) {
     <div className="chart-grid">
       {series.map((s) => {
         const rows = s.points.map((p) => ({ date: p.date, value: p.value }));
+        const latest = latestPoint(rows);
         return (
           <div key={s.name} className="chart-grid-cell">
             <div className="chart-grid-title">{s.name}</div>
-            <ResponsiveContainer width="100%" height={140}>
+            {latest ? (
+              <div className="chart-grid-latest">
+                {latest.value!.toLocaleString("ko-KR", { maximumFractionDigits: 2 })}
+                <span className="chart-grid-latest-date">{latest.date}</span>
+              </div>
+            ) : (
+              <div className="chart-grid-latest chart-grid-latest-empty">데이터 없음</div>
+            )}
+            <ResponsiveContainer width="100%" height={120}>
               <LineChart data={rows} margin={{ top: 4, right: 12, bottom: 0, left: 0 }}>
                 <XAxis dataKey="date" hide />
                 <YAxis
@@ -203,9 +253,25 @@ function SeriesTable({ data, series }: { data: ChartRow[]; series: Series[] }) {
   );
 }
 
+function RangeSwitch({ range, onChange }: { range: RangeKey; onChange: (r: RangeKey) => void }) {
+  return (
+    <div className="chart-mode-switch">
+      {(Object.keys(RANGE_LABELS) as RangeKey[]).map((r) => (
+        <button
+          key={r}
+          type="button"
+          className={`chart-mode-button${range === r ? " active" : ""}`}
+          onClick={() => onChange(r)}
+        >
+          {RANGE_LABELS[r]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function MultiSeriesChart({ series }: { series: Series[] }) {
-  const manySeries = series.length > 8;
-  const [mode, setMode] = useState<ViewMode>(manySeries ? "grid" : "raw");
+  const [overlayMode, setOverlayMode] = useState<OverlayMode>("raw");
   const [range, setRange] = useState<RangeKey>("all");
 
   const ranged = useMemo(() => filterByRange(series, range), [series, range]);
@@ -217,50 +283,59 @@ export function MultiSeriesChart({ series }: { series: Series[] }) {
     return <div className="empty-chart">표시할 데이터가 없습니다.</div>;
   }
 
-  const showModeSwitch = series.length > 1;
+  const noData = ranged.every((s) => s.points.length === 0);
+  const hasMultipleSeries = series.length > 1;
 
   return (
-    <div>
-      <div className="chart-controls">
-        {showModeSwitch && (
-          <div className="chart-mode-switch">
-            {(Object.keys(VIEW_LABELS) as ViewMode[]).map((m) => (
-              <button
-                key={m}
-                type="button"
-                className={`chart-mode-button${mode === m ? " active" : ""}`}
-                onClick={() => setMode(m)}
-              >
-                {VIEW_LABELS[m]}
-              </button>
-            ))}
-          </div>
-        )}
-
-        <div className="chart-mode-switch">
-          {(Object.keys(RANGE_LABELS) as RangeKey[]).map((r) => (
-            <button
-              key={r}
-              type="button"
-              className={`chart-mode-button${range === r ? " active" : ""}`}
-              onClick={() => setRange(r)}
-            >
-              {RANGE_LABELS[r]}
-            </button>
-          ))}
-        </div>
+    <div className="chart-stack">
+      <div className="chart-top-bar">
+        <RangeSwitch range={range} onChange={setRange} />
       </div>
 
-      {ranged.every((s) => s.points.length === 0) ? (
-        <div className="empty-chart">선택한 기간에 데이터가 없습니다.</div>
-      ) : (
-        <>
-          {mode === "raw" && <OverlayChart data={data} series={ranged} />}
-          {mode === "indexed" && <OverlayChart data={indexedData} series={indexedSeriesData} />}
-          {mode === "grid" && <SeriesGrid series={ranged} />}
-          {mode === "table" && <SeriesTable data={data} series={ranged} />}
-        </>
+      {hasMultipleSeries && (
+        <section className="chart-section">
+          <h3 className="chart-section-title">주요 지표</h3>
+          {noData ? (
+            <div className="empty-chart">선택한 기간에 데이터가 없습니다.</div>
+          ) : (
+            <SeriesGrid series={ranged} />
+          )}
+        </section>
       )}
+
+      <section className="chart-card">
+        <div className="chart-card-header">
+          <h3 className="chart-section-title">가격 추이</h3>
+          {hasMultipleSeries && (
+            <div className="chart-mode-switch">
+              {(Object.keys(OVERLAY_LABELS) as OverlayMode[]).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  className={`chart-mode-button${overlayMode === m ? " active" : ""}`}
+                  onClick={() => setOverlayMode(m)}
+                >
+                  {OVERLAY_LABELS[m]}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="chart-card-body">
+          {noData ? (
+            <div className="empty-chart">선택한 기간에 데이터가 없습니다.</div>
+          ) : (
+            <>
+              {(overlayMode === "raw" || !hasMultipleSeries) && <OverlayChart data={data} series={ranged} />}
+              {overlayMode === "indexed" && hasMultipleSeries && (
+                <OverlayChart data={indexedData} series={indexedSeriesData} />
+              )}
+              {overlayMode === "table" && hasMultipleSeries && <SeriesTable data={data} series={ranged} />}
+            </>
+          )}
+        </div>
+      </section>
     </div>
   );
 }
