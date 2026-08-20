@@ -32,4 +32,21 @@ export const CATEGORY_ORDER = [
   "부동산",
   "자동차",
   "무역·수출",
+  "계열사 주가",
 ];
+
+export function groupByCategory<T extends { category: string }>(items: T[]): [string, T[]][] {
+  const byCategory = new Map<string, T[]>();
+  for (const item of items) {
+    const list = byCategory.get(item.category) ?? [];
+    list.push(item);
+    byCategory.set(item.category, list);
+  }
+
+  const orderedKeys = [
+    ...CATEGORY_ORDER.filter((c) => byCategory.has(c)),
+    ...[...byCategory.keys()].filter((c) => !CATEGORY_ORDER.includes(c)),
+  ];
+
+  return orderedKeys.map((c) => [c, byCategory.get(c)!]);
+}

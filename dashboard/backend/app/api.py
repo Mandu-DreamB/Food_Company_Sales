@@ -1,9 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from .config import missing_env
-from .registry import INDICATORS, INDICATORS_BY_ID, Indicator
-from .store import read_affiliates, read_all_logs, read_stale_cache
-from .schemas import AffiliateList, IndicatorResult
+from .registry import AFFILIATE_CATEGORY_INDICATOR_CATEGORIES, INDICATORS, INDICATORS_BY_ID, Indicator
+from .store import read_affiliates, read_all_logs, read_briefing, read_stale_cache
+from .schemas import AffiliateList, BriefingResult, IndicatorResult
 
 router = APIRouter(prefix="/api")
 
@@ -16,6 +16,18 @@ def list_affiliates():
         row["category"] for row in sorted(rows, key=lambda r: r["category_order"])
     ))
     return AffiliateList(categories=categories, affiliates=rows)
+
+
+@router.get("/affiliates/{affiliate_id}/briefing", response_model=BriefingResult)
+def get_affiliate_briefing(affiliate_id: str):
+    if not any(a["id"] == affiliate_id for a in read_affiliates()):
+        raise HTTPException(status_code=404, detail="affiliate not found")
+
+    briefing = read_briefing(affiliate_id)
+    if briefing is None:
+        return BriefingResult(status="not_generated")
+
+    return BriefingResult(status=briefing["status"], text=briefing["text"], generated_at=briefing["generated_at"])
 
 
 def _result(
@@ -42,12 +54,20 @@ def _result(
 
 
 @router.get("/sources", response_model=list[IndicatorResult])
-def list_sources():
+def list_sources(affiliate_id: str | None = Query(None)):
+    indicators = INDICATORS
+    if affiliate_id is not None:
+        affiliate = next((a for a in read_affiliates() if a["id"] == affiliate_id), None)
+        if affiliate is None:
+            raise HTTPException(status_code=404, detail="affiliate not found")
+        relevant = set(AFFILIATE_CATEGORY_INDICATOR_CATEGORIES.get(affiliate["category"], []))
+        indicators = [ind for ind in INDICATORS if ind.category in relevant]
+
     # 지표마다 DB를 왕복하면 N+1이 되어 느려지므로, 로그는 한 번의 쿼리로만 읽는다.
     logs = read_all_logs()
     return [
         _result(ind, log=logs.get(ind.id), missing=missing_env(ind.required_env))
-        for ind in INDICATORS
+        for ind in indicators
     ]
 
 

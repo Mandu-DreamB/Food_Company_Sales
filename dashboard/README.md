@@ -58,6 +58,7 @@ FAO 식품가격지수, 자동차 수출액(e-나라지표)은 키 없이 바로
 | `ECOS_API_KEY` | https://ecos.bok.or.kr/api/ | 기준금리, 가계신용, 거시지표 |
 | `FRED_API_KEY` | https://fred.stlouisfed.org/docs/api/api_key.html | FOMC 점도표 |
 | `REALTY_API_KEY` | https://www.reb.or.kr/r-one/ | 주택가격지수, 주택거래량 |
+| `OPENAI_API_KEY` | https://platform.openai.com/api-keys | 계열사 AI 브리핑 (아래 참고). 없어도 서버는 정상 동작하며, 브리핑만 생성되지 않습니다 |
 
 ## 3. 프론트엔드 실행
 
@@ -84,6 +85,29 @@ npm run dev
   있습니다.
 - API 호출이 실패해도 서버는 죽지 않고 `status: "error"`와 마지막으로 성공한 캐시 데이터를 함께
   돌려줍니다.
+
+## AI 브리핑
+
+계열사 페이지(`/company/:affiliateId`) 상단에, 그 계열사 업종과 관련된 지표들의 최근 동향을 LLM이
+2~4문장으로 요약해 주는 브리핑이 뜹니다. 실시간 뉴스/공시를 읽어오는 게 아니라, **이미 DB에 쌓인
+지표 시계열의 최근 값·변화율·최고/최저 여부를 계산해서 "사실 목록"으로 만들고, 그 목록만 근거로
+LLM이 문장을 쓰는 방식**입니다 (`app/briefing.py`).
+
+- **생성 주기**: 지표 수집(15분 간격)과는 별개로 **24시간마다** 스케줄러(`app/main.py`)가 돌며,
+  마지막 생성이 24시간을 넘긴 계열사만 다시 생성합니다. 즉 지표 데이터가 갱신돼도 최대 24시간
+  이내에 브리핑에 반영됩니다 — 매번 즉시 반영하지 않는 이유는 재배포/재시작마다 LLM을 다시 부르면
+  비용과 시간이 계속 나가기 때문입니다. (지금은 이 24시간 주기를 그대로 유지하기로 함. 즉시
+  재생성이 필요하면 `python -c "from app.briefing import generate_all_briefings; generate_all_briefings(force=True)"`
+  를 수동으로 실행)
+- **저장**: `affiliate_briefings` 테이블에 계열사당 1행 (텍스트/생성시각/상태). 생성 실패해도
+  마지막 성공 텍스트는 그대로 두고 상태만 `error`로 남깁니다 (지표 수집 실패 처리와 동일한 패턴).
+- **API**: `GET /api/affiliates/{affiliate_id}/briefing` — `status`가 `ok`가 아니거나 `text`가
+  없으면 프론트는 브리핑 박스를 그냥 숨깁니다 (페이지 전체가 깨지지 않음).
+- **관련 지표 매핑**: 계열사 업종별로 어떤 지표 카테고리가 "관련 있다"고 볼지는 `app/registry.py`의
+  `AFFILIATE_CATEGORY_INDICATOR_CATEGORIES`에 있습니다. 실제 매출/재무 데이터 기반 통계적
+  상관관계가 아니라 업종 지식으로 큐레이션한 것이라, 로드맵 2단계(매출 vs 지표 상관관계 분석)가
+  진행되면 이 매핑을 데이터 기반으로 교체/보완할 수 있습니다.
+
 문제점
 1. 챗봇에서 RAG의 내장 벡터DB도 RENDER에 따로 배포를 해야함(유료배포)
 

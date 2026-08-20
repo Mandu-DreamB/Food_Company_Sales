@@ -10,6 +10,12 @@ export interface AffiliateList {
   affiliates: Affiliate[];
 }
 
+export interface BriefingResult {
+  status: "ok" | "error" | "not_generated";
+  text: string | null;
+  generated_at: string | null;
+}
+
 export interface Point {
   date: string;
   value: number | null;

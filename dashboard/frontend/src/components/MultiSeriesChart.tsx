@@ -13,6 +13,7 @@ import type { Series } from "../api/types";
 import { colorForIndex } from "../theme";
 
 type ViewMode = "raw" | "indexed" | "grid" | "table";
+type RangeKey = "1y" | "5y" | "10y" | "all";
 
 interface ChartRow {
   date: string;
@@ -56,6 +57,32 @@ const VIEW_LABELS: Record<ViewMode, string> = {
   grid: "개별 보기",
   table: "표로 보기",
 };
+
+const RANGE_LABELS: Record<RangeKey, string> = { "1y": "1Y", "5y": "5Y", "10y": "10Y", all: "전체" };
+const RANGE_YEARS: Record<"1y" | "5y" | "10y", number> = { "1y": 1, "5y": 5, "10y": 10 };
+
+// 지표마다 마지막 수집 시점이 달라서(오늘일 수도, 몇 달 전일 수도) "오늘 - N년"이 아니라
+// "이 지표의 가장 최근 데이터 시점 - N년"을 기준으로 잘라야 실제로 최근 N년치가 남는다.
+function filterByRange(series: Series[], range: RangeKey): Series[] {
+  if (range === "all") return series;
+
+  let latest: string | null = null;
+  for (const s of series) {
+    for (const p of s.points) {
+      if (latest === null || p.date > latest) latest = p.date;
+    }
+  }
+  if (latest === null) return series;
+
+  const cutoff = new Date(latest);
+  cutoff.setFullYear(cutoff.getFullYear() - RANGE_YEARS[range]);
+  const cutoffIso = cutoff.toISOString().slice(0, 10);
+
+  return series.map((s) => ({
+    name: s.name,
+    points: s.points.filter((p) => p.date >= cutoffIso),
+  }));
+}
 
 function ChartTooltip() {
   return (
@@ -179,9 +206,11 @@ function SeriesTable({ data, series }: { data: ChartRow[]; series: Series[] }) {
 export function MultiSeriesChart({ series }: { series: Series[] }) {
   const manySeries = series.length > 8;
   const [mode, setMode] = useState<ViewMode>(manySeries ? "grid" : "raw");
+  const [range, setRange] = useState<RangeKey>("all");
 
-  const data = useMemo(() => mergeSeries(series), [series]);
-  const indexedSeriesData = useMemo(() => indexSeries(series), [series]);
+  const ranged = useMemo(() => filterByRange(series, range), [series, range]);
+  const data = useMemo(() => mergeSeries(ranged), [ranged]);
+  const indexedSeriesData = useMemo(() => indexSeries(ranged), [ranged]);
   const indexedData = useMemo(() => mergeSeries(indexedSeriesData), [indexedSeriesData]);
 
   if (series.length === 0) {
@@ -192,25 +221,46 @@ export function MultiSeriesChart({ series }: { series: Series[] }) {
 
   return (
     <div>
-      {showModeSwitch && (
+      <div className="chart-controls">
+        {showModeSwitch && (
+          <div className="chart-mode-switch">
+            {(Object.keys(VIEW_LABELS) as ViewMode[]).map((m) => (
+              <button
+                key={m}
+                type="button"
+                className={`chart-mode-button${mode === m ? " active" : ""}`}
+                onClick={() => setMode(m)}
+              >
+                {VIEW_LABELS[m]}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="chart-mode-switch">
-          {(Object.keys(VIEW_LABELS) as ViewMode[]).map((m) => (
+          {(Object.keys(RANGE_LABELS) as RangeKey[]).map((r) => (
             <button
-              key={m}
+              key={r}
               type="button"
-              className={`chart-mode-button${mode === m ? " active" : ""}`}
-              onClick={() => setMode(m)}
+              className={`chart-mode-button${range === r ? " active" : ""}`}
+              onClick={() => setRange(r)}
             >
-              {VIEW_LABELS[m]}
+              {RANGE_LABELS[r]}
             </button>
           ))}
         </div>
-      )}
+      </div>
 
-      {mode === "raw" && <OverlayChart data={data} series={series} />}
-      {mode === "indexed" && <OverlayChart data={indexedData} series={indexedSeriesData} />}
-      {mode === "grid" && <SeriesGrid series={series} />}
-      {mode === "table" && <SeriesTable data={data} series={series} />}
+      {ranged.every((s) => s.points.length === 0) ? (
+        <div className="empty-chart">선택한 기간에 데이터가 없습니다.</div>
+      ) : (
+        <>
+          {mode === "raw" && <OverlayChart data={data} series={ranged} />}
+          {mode === "indexed" && <OverlayChart data={indexedData} series={indexedSeriesData} />}
+          {mode === "grid" && <SeriesGrid series={ranged} />}
+          {mode === "table" && <SeriesTable data={data} series={ranged} />}
+        </>
+      )}
     </div>
   );
 }

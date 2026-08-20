@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select, delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from .db import SessionLocal
-from .models import Affiliate, IndicatorPoint, IndicatorFetchLog
+from .models import Affiliate, AffiliateBriefing, IndicatorPoint, IndicatorFetchLog
 
 
 def read_affiliates() -> list[dict]:
@@ -122,4 +122,44 @@ def write_error(indicator_id: str, error: str, attempted_at: datetime) -> None:
         else:
             log.status = "error"
             log.error = error
+        session.commit()
+
+
+def read_briefing(affiliate_id: str) -> dict | None:
+    with SessionLocal() as session:
+        row = session.get(AffiliateBriefing, affiliate_id)
+        if row is None:
+            return None
+        return {
+            "text": row.text,
+            "generated_at": row.generated_at.isoformat(),
+            "status": row.status,
+            "error": row.error,
+        }
+
+
+def write_briefing(affiliate_id: str, text: str, generated_at: datetime) -> None:
+    with SessionLocal() as session:
+        stmt = pg_insert(AffiliateBriefing).values(
+            affiliate_id=affiliate_id, text=text, generated_at=generated_at, status="ok", error=None,
+        ).on_conflict_do_update(
+            index_elements=["affiliate_id"],
+            set_={"text": text, "generated_at": generated_at, "status": "ok", "error": None},
+        )
+        session.execute(stmt)
+        session.commit()
+
+
+def write_briefing_error(affiliate_id: str, error: str, attempted_at: datetime) -> None:
+    """브리핑 생성 실패 기록. 마지막 성공 텍스트/시각은 건드리지 않고 상태만 error로 남긴다
+    (write_error와 같은 이유 — 화면에는 마지막으로 성공한 브리핑을 계속 보여줄 수 있게)."""
+    with SessionLocal() as session:
+        row = session.get(AffiliateBriefing, affiliate_id)
+        if row is None:
+            session.add(AffiliateBriefing(
+                affiliate_id=affiliate_id, text=None, generated_at=attempted_at, status="error", error=error,
+            ))
+        else:
+            row.status = "error"
+            row.error = error
         session.commit()
