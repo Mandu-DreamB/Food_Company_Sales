@@ -1,11 +1,12 @@
 import { useSources } from "../context/SourcesContext";
 import { IndicatorCard } from "../components/IndicatorCard";
+import { Spinner } from "../components/Spinner";
 import { groupByCategory } from "../theme";
 
 export function Dashboard() {
   const { sources, loading, error } = useSources();
 
-  if (loading) return <div className="page-state">불러오는 중...</div>;
+  if (loading) return <div className="page-state"><Spinner /></div>;
   if (error) return <div className="page-state error">{error}</div>;
 
   return (

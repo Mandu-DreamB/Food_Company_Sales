@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { getAffiliateBriefing, listAffiliates, listSources } from "../api/client";
 import type { BriefingResult, IndicatorResult } from "../api/types";
 import { IndicatorCard } from "../components/IndicatorCard";
+import { Spinner } from "../components/Spinner";
 import { groupByCategory } from "../theme";
 
 function Briefing({ affiliateId }: { affiliateId: string }) {
@@ -51,7 +52,7 @@ export function CompanyDashboard() {
       .finally(() => setLoading(false));
   }, [affiliateId]);
 
-  if (loading) return <div className="page-state">불러오는 중...</div>;
+  if (loading) return <div className="page-state"><Spinner /></div>;
   if (error) return <div className="page-state error">{error}</div>;
 
   return (

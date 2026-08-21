@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { listAffiliates } from "../api/client";
 import type { AffiliateList } from "../api/types";
 import { AffiliateCard } from "../components/AffiliateCard";
+import { Spinner } from "../components/Spinner";
 
 export function CompanyLanding() {
   const [data, setData] = useState<AffiliateList | null>(null);
@@ -15,7 +16,7 @@ export function CompanyLanding() {
   }, []);
 
   if (error) return <div className="page-state error">{error}</div>;
-  if (!data) return <div className="page-state">불러오는 중...</div>;
+  if (!data) return <div className="page-state"><Spinner /></div>;
 
   const tabs = ["전체", ...data.categories];
   const visible =
