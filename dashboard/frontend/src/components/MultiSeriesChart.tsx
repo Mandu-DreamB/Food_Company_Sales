@@ -125,7 +125,14 @@ function useZoomPan(length: number) {
     const el = containerRef.current;
     if (!el) return;
 
+    // 다크 툴팁은 이 컨테이너 안쪽에 떠 있어서, 툴팁 목록을 스크롤/클릭하려는 시도까지
+    // 차트 확대·이동 로직이 가로채 버린다. 이벤트 타깃이 툴팁 내부면 그냥 흘려보낸다.
+    function isInsideTooltip(target: EventTarget | null) {
+      return target instanceof HTMLElement && target.closest(".chart-tooltip-dark") != null;
+    }
+
     function handleWheel(e: WheelEvent) {
+      if (isInsideTooltip(e.target)) return;
       if (length <= MIN_WINDOW) {
         e.preventDefault();
         return;
@@ -152,7 +159,7 @@ function useZoomPan(length: number) {
     }
 
     function handleTouchStart(e: TouchEvent) {
-      if (e.touches.length !== 1) return;
+      if (e.touches.length !== 1 || isInsideTooltip(e.target)) return;
       dragStart.current = { x: e.touches[0].clientX, win: winRef.current };
       setDragging(true);
     }
@@ -181,6 +188,8 @@ function useZoomPan(length: number) {
   }, [length, clamp]);
 
   function onMouseDown(e: ReactMouseEvent<HTMLDivElement>) {
+    // 툴팁 목록 위에서 누른 거면 스크롤바 조작이니 그냥 흘려보낸다.
+    if ((e.target as HTMLElement).closest(".chart-tooltip-dark")) return;
     // 기본 동작(텍스트 드래그 선택)을 막아야 브라우저가 선택 영역을 따라가려고
     // 페이지를 위아래로 자동 스크롤하는 걸 막을 수 있다.
     e.preventDefault();
@@ -212,13 +221,16 @@ function pctChange(current: number | null, previous: number | null): number | nu
 }
 
 // 값 옆에 시리즈 색 점 + 전일 대비 변화율을 보여주는 다크 툴팁.
+// 드래그로 구간을 옮기는 동안엔 마우스가 지나는 지점마다 내용이 계속 바뀌어서 오히려
+// 방해가 되므로, 그 동안은(suppressed) 아예 띄우지 않는다.
 function PriceTooltip({
   active,
   payload,
   label,
   data,
-}: TooltipContentProps & { data: ChartRow[] }) {
-  if (!active || !payload || payload.length === 0) return null;
+  suppressed,
+}: TooltipContentProps & { data: ChartRow[]; suppressed: boolean }) {
+  if (suppressed || !active || !payload || payload.length === 0) return null;
 
   const idx = data.findIndex((row) => row.date === label);
   const prevRow = idx > 0 ? data[idx - 1] : null;
@@ -307,7 +319,7 @@ function PriceChart({
         onMouseUp={zoom.onMouseUp}
         onMouseLeave={zoom.onMouseLeave}
       >
-        <ResponsiveContainer width="100%" height={380}>
+        <ResponsiveContainer width="100%" height={480}>
           <LineChart data={visibleData} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
             <CartesianGrid stroke="var(--gridline)" strokeDasharray="0" vertical={false} />
             <XAxis
@@ -332,8 +344,8 @@ function PriceChart({
               }
             />
             <Tooltip
-              content={(props) => <PriceTooltip {...props} data={visibleData} />}
-              cursor={{ stroke: "var(--baseline)", strokeDasharray: "3 3" }}
+              content={(props) => <PriceTooltip {...props} data={visibleData} suppressed={zoom.dragging} />}
+              cursor={zoom.dragging ? false : { stroke: "var(--baseline)", strokeDasharray: "3 3" }}
             />
             {series.map((s, i) => (
               <Line

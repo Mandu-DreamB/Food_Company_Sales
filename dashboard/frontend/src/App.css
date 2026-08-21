@@ -322,7 +322,6 @@
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: 14px;
-  overflow: hidden;
 }
 
 .chart-card-header {
@@ -443,6 +442,19 @@
   box-shadow: 0 8px 24px rgba(11, 11, 11, 0.28);
   min-width: 200px;
   padding: 12px 14px;
+  max-height: 440px;
+  overflow-y: auto;
+  /* recharts가 툴팁 래퍼에 pointer-events: none을 걸어두는데(차트 호버를 막지 않으려고),
+     그 안에 있는 이 목록은 직접 스크롤해야 하니 여기서만 다시 풀어준다. */
+  pointer-events: auto;
+}
+
+.chart-tooltip-dark .chart-tooltip-label-dark {
+  position: sticky;
+  top: -12px;
+  background: #1c1f26;
+  padding-top: 12px;
+  margin-top: -12px;
 }
 
 .chart-tooltip-label-dark {
