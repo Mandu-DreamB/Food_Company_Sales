@@ -79,7 +79,10 @@ def _customs_fetch(strt: str, end: str, cnty_cd: str | None = None) -> list[dict
 
 
 def _prd(item: dict) -> str:
-    return str(item.get("year") or item.get("strd") or item.get("period") or "").strip()
+    # 관세청 API가 "2024.01"처럼 점을 넣어 돌려주는데, 아래서 [:6]로 잘라 YYYYMM 6자리로 쓰므로
+    # 점을 먼저 없애야 한다 (안 그러면 "2024.0"이 되어 \d{6} 정규식에 전부 걸러진다).
+    raw = str(item.get("year") or item.get("strd") or item.get("period") or "").strip()
+    return raw.replace(".", "")
 
 
 def _exp(item: dict) -> float:
