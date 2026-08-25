@@ -10,7 +10,7 @@ from pathlib import Path
 OUT = Path(__file__).resolve().parent / "affiliates_correlation.ipynb"
 
 CELLS: list[tuple[str, str]] = [
-("md", """# 계열사 매출 × 경제지표 상관관계 (선별 6곳)
+("md", """# 계열사 매출 × 경제지표 상관관계 (선별 7곳)
 
 삼양그룹 계열사 14곳 중 **DART 공시에서 3년 이상 매출을 뽑을 수 있는 곳만** 골라
 대시보드가 수집해 둔 경제지표(PostgreSQL)와 상관관계를 본다.
@@ -19,12 +19,14 @@ CELLS: list[tuple[str, str]] = [
 
 | 판정 | 계열사 | 사유 |
 |---|---|---|
+| 분석 | 삼양홀딩스 | 그룹 연결 분기 매출 (상장 000070, `RAG/fetch_dart.py`로 수집) |
 | 분석 | 삼양사(식품), 삼양사(화학) | 부문별 분기 매출 18개 구간 |
 | 분석 | 삼양패키징 | 법인 분기 매출 23개 구간 |
 | 참고만 | 삼양이노켐, 삼양데이타시스템 | 감사보고서만 → 연간 6개 구간 |
 | 제외 | 삼양엔씨켐 | 연간 5개 구간 (최소 6 미달) |
 | 제외 | 삼양사(코스메틱) | 보고 부문이 식품/화학/기타뿐 — 코스메틱 매출을 뗄 수 없음 |
-| 제외 | 삼양홀딩스, 삼남석유화학, 삼양화성, 삼양화인테크놀로지, 삼양KCI, VERDANT | DART XML 자체가 없음 |
+| 제외 | 삼남석유화학, 삼양화성, 삼양화인테크놀로지 | DART에 감사보고서 11~12건씩 있으나 아직 미수집 (연 1회) |
+| 제외 | 삼양KCI, VERDANT | DART 법인 등록 자체가 확인 안 됨 |
 | 제외 | 삼양바이오팜 | 2020년 1건뿐 |
 
 ### 구성
@@ -35,7 +37,7 @@ CELLS: list[tuple[str, str]] = [
 5. 시차(lag) 상관관계
 6. 결론과 한계
 
-> **주의**: 표본이 18~23개 분기(연간은 6개)로 작다. 상관계수는 확정된 관계가 아니라
+> **주의**: 표본이 18~26개 분기(연간은 6개)로 작다. 상관계수는 확정된 관계가 아니라
 > 가설 후보로만 해석할 것."""),
 
 ("md", "## 0. 환경 설정"),
@@ -67,10 +69,10 @@ print(f"대상 {len(rc.TARGETS)}곳:", ", ".join(t[0] for t in rc.TARGETS))"""),
 
 ("md", """## 1. 매출 시계열 로드
 
-DART XML 82건을 매번 다시 파싱하면 몇 분씩 걸려서 `out/revenue.csv`에 캐시해 둔다.
+DART XML 111건을 매번 다시 파싱하면 몇 분씩 걸려서 `out/revenue.csv`에 캐시해 둔다.
 캐시가 없으면 여기서 한 번만 만든다 (`rc.load_revenue(rebuild=True)`로 강제 재생성).
 
-- **분기**: 분·반기보고서의 누적 매출을 차분해 구간값으로 역산 (삼양사 부문별, 삼양패키징)
+- **분기**: 분·반기보고서의 누적 매출을 차분해 구간값으로 역산 (삼양홀딩스, 삼양사 부문별, 삼양패키징)
 - **연간**: 감사보고서 손익계산서의 매출액 (삼양이노켐, 삼양데이타시스템, 삼양엔씨켐)"""),
 
 ("code", """revenue = rc.load_revenue(rebuild=False)
@@ -81,13 +83,15 @@ revenue.groupby("label").agg(
     평균매출_백만원=("revenue", "mean"),
 ).round(0)"""),
 
-("code", """fig, axes = plt.subplots(2, 3, figsize=(16, 7), sharex=False)
+("code", """fig, axes = plt.subplots(2, 4, figsize=(19, 7), sharex=False)
 for ax, (label, *_) in zip(axes.flat, rc.TARGETS):
     sub = revenue[revenue.label == label]
     ax.plot(sub.period_to, sub.revenue, marker="o", ms=3, color="#B6512E")
     ax.set_title(f"{label} (n={len(sub)})", fontsize=10)
     ax.grid(alpha=0.3)
     ax.tick_params(axis="x", rotation=45, labelsize=7)
+for ax in axes.flat[len(rc.TARGETS):]:
+    ax.axis("off")
 fig.suptitle("계열사별 매출 시계열 (백만원)")
 plt.tight_layout()
 plt.show()"""),
@@ -161,12 +165,15 @@ for label, category, *_ in rc.TARGETS:
         print(f"{label}: 구간 {len(rev)}개뿐이라 건너뜀 (최소 {MIN_N})")
         continue
 
+    # 매출 구간의 절반 이상 겹치는 지표만 본다. 연 1회 지표(n=6)를 26분기 매출과 맞추면
+    # 6점짜리 상관이 나오는데, |r|로만 줄세우면 그게 26점짜리보다 위로 올라온다.
+    min_n = max(MIN_N, len(rev) // 2)
     aligned = eda_utils.align_indicators_to_periods(rev, "revenue", all_series)
-    level = eda_utils.corr_table(aligned, all_series, "revenue", min_n=MIN_N)
+    level = eda_utils.corr_table(aligned, all_series, "revenue", min_n=min_n)
     pct = aligned.drop(columns=["period_from"]).pct_change().dropna(how="all")
-    change = eda_utils.corr_table(pct, all_series, "revenue", min_n=MIN_N)
+    change = eda_utils.corr_table(pct, all_series, "revenue", min_n=min_n)
     results[label] = {"aligned": aligned, "level": level, "change": change,
-                      "series": all_series, "n": len(rev)}
+                      "series": all_series, "n": len(rev), "min_n": min_n}
     print(f"{label}: 구간 {len(rev)} · 지표 {len(all_series)} · 레벨 {len(level)} · 변화율 {len(change)}")"""),
 
 ("code", """def top_table(label: str, top_n: int = 12) -> pd.DataFrame:
@@ -197,19 +204,20 @@ for label in results:
 ("md", """## 4. 시차(lag) 상관관계
 
 지표가 t-L 구간, 매출이 t 구간일 때의 상관을 lag 0~3에 대해 계산한다.
-분기 시계열이 있는 3곳만 의미가 있다 (연간 6개 구간에 lag를 걸면 표본이 3개로 줄어든다).
+분기 시계열이 있는 4곳만 의미가 있다 (연간 6개 구간에 lag를 걸면 표본이 3개로 줄어든다).
 
 > 지표 × lag 조합을 모두 훑어 최댓값을 고르는 방식이라 **다중비교 문제**가 있다.
 > 확정된 선행지표가 아니라 가설 후보로 취급할 것."""),
 
-("code", """QUARTERLY = ["삼양사(식품)", "삼양사(화학)", "삼양패키징"]
+("code", """QUARTERLY = ["삼양홀딩스", "삼양사(식품)", "삼양사(화학)", "삼양패키징"]
 
 for label in QUARTERLY:
     if label not in results:
         continue
     r = results[label]
     level_df = r["aligned"].drop(columns=["period_from"])
-    lag_df = eda_utils.lag_correlation_table(level_df, r["series"], "revenue", max_lag=4, min_n=MIN_N)
+    lag_df = eda_utils.lag_correlation_table(level_df, r["series"], "revenue", max_lag=4,
+                                            min_n=max(MIN_N, r["n"] // 2))
     print(f"\\n{'=' * 70}\\n{label}")
     display(lag_df.head(10).round(2))
     if not lag_df.empty:
@@ -238,7 +246,10 @@ for label in QUARTERLY:
 - 삼양엔씨켐: 2020~2023 감사보고서(구 "엔씨켐")에서 매출을 못 뽑은 건이 있어 구간이 5개다.
   손익계산서 파싱을 보강하면 6개 이상으로 늘릴 수 있다.
 - 삼양사 부문별 매출 2020~2021 상반기: 해당 시기 표 레이아웃에 맞는 정규식을 추가하면
-  구간이 18 → 23개로 늘어난다."""),
+  구간이 18 → 23개로 늘어난다.
+- 삼남석유화학·삼양화성·삼양화인테크놀로지: DART에 2015년부터 감사보고서가 11~12건씩 있다.
+  `python RAG/fetch_dart.py 삼남석유화학 --type F --from 20150101` 로 받으면 연간 n=11까지
+  늘릴 수 있다 (연 1회라 분기 분석은 여전히 불가)."""),
 ]
 
 

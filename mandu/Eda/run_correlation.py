@@ -35,6 +35,7 @@ SAMYANG = {"(주)삼양사", "삼양사"}
 # 삼양사(코스메틱)은 제외했다: 23개 보고서 전부 부문이 식품/화학/기타뿐이라 코스메틱 매출만
 # 따로 뗄 수가 없다(코스메틱 사업은 화학부문에 포함돼 있다).
 TARGETS = [
+    ("삼양홀딩스", "지주", {"(주)삼양홀딩스", "삼양홀딩스"}, "entity", None),
     ("삼양사(식품)", "식품", SAMYANG, "segment", "식품"),
     ("삼양사(화학)", "화학", SAMYANG, "segment", "화학"),
     ("삼양패키징", "패키징", {"(주)삼양패키징", "삼양패키징"}, "entity", None),
@@ -196,10 +197,13 @@ def main(rebuild: bool = False) -> None:
             summary.append((label, len(rev), None, None))
             continue
 
+        # 매출 구간의 절반 이상 겹치는 지표만 본다. 연 1회 지표(n=6)를 26분기 매출과
+        # 맞추면 6점짜리 상관이 나오는데, |r|로만 줄세우면 그게 26점짜리보다 위로 올라온다.
+        min_n = max(MIN_N, len(rev) // 2)
         aligned = eda_utils.align_indicators_to_periods(rev, "revenue", all_series)
-        level = eda_utils.corr_table(aligned, all_series, "revenue", min_n=MIN_N)
+        level = eda_utils.corr_table(aligned, all_series, "revenue", min_n=min_n)
         pct = aligned.drop(columns=["period_from"]).pct_change().dropna(how="all")
-        change = eda_utils.corr_table(pct, all_series, "revenue", min_n=MIN_N)
+        change = eda_utils.corr_table(pct, all_series, "revenue", min_n=min_n)
 
         level.to_csv(OUT_DIR / f"corr_level_{label}.csv", index=False, encoding="utf-8-sig")
         change.to_csv(OUT_DIR / f"corr_change_{label}.csv", index=False, encoding="utf-8-sig")
