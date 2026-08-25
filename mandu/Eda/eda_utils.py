@@ -250,6 +250,10 @@ def corr_table(df: pd.DataFrame, all_series: dict[str, pd.Series], value_col: st
             "spearman": sub[value_col].corr(sub[key], method="spearman"),
             "n": len(sub),
         })
+    # 표본이 min_n에 못 미치면 out이 비는데(연 1회 보고서 계열사의 변화율 등), 그대로
+    # DataFrame으로 만들면 컬럼조차 없어서 sort_values가 KeyError를 낸다.
+    if not out:
+        return pd.DataFrame(columns=["indicator", "pearson", "spearman", "n"])
     return pd.DataFrame(out).sort_values("pearson", key=lambda s: s.abs(), ascending=False).reset_index(drop=True)
 
 
@@ -294,6 +298,8 @@ def lag_correlation_table(level_df: pd.DataFrame, all_series: dict[str, pd.Serie
             **{f"L{L}": per_lag.get(L) for L in range(max_lag)},
         })
 
+    if not lag_rows:  # corr_table과 같은 이유
+        return pd.DataFrame(columns=["indicator", "best_lag", "best_corr"] + [f"L{L}" for L in range(max_lag)])
     return pd.DataFrame(lag_rows).sort_values("best_corr", key=lambda s: s.abs(), ascending=False).reset_index(drop=True)
 
 
