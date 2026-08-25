@@ -36,7 +36,7 @@
 }
 
 .sidebar-group.open {
-  background: var(--page-plane);
+  background: var(--surface-1);
 }
 
 .sidebar-group-title {
@@ -88,11 +88,11 @@
 }
 
 .sidebar-link:hover {
-  background: var(--page-plane);
+  background: var(--tint);
 }
 
 .sidebar-link.active {
-  background: var(--page-plane);
+  background: var(--tint);
   color: var(--text-primary);
   font-weight: 600;
 }
@@ -560,6 +560,7 @@
 }
 
 .chart-grid-cell {
+  background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 12px 12px 4px;
@@ -635,7 +636,7 @@
 }
 
 .chart-table tbody tr:hover {
-  background: var(--page-plane);
+  background: var(--tint);
 }
 
 .fetched-at {
@@ -749,7 +750,7 @@
 .affiliate-card-tag {
   font-size: 11.5px;
   color: var(--text-secondary);
-  background: var(--page-plane);
+  background: var(--tint);
   border: 1px solid var(--border);
   border-radius: 999px;
   padding: 3px 10px;
@@ -917,7 +918,7 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  background: var(--page-plane);
+  background: var(--tint);
 }
 
 .chat-empty {
