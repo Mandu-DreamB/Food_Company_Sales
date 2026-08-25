@@ -30,15 +30,18 @@ CELLS: list[tuple[str, str]] = [
 | 제외 | 삼양바이오팜 | 2020년 1건뿐 |
 
 ### 구성
-1. 환경 설정
-2. 매출 시계열 로드
-3. 데이터 품질 점검 — 결측치 / 이상치
-4. 상관관계 (레벨 · 변화율)
-5. 시차(lag) 상관관계
-6. 결론과 한계
+0. 환경 설정
+1. 매출 시계열 로드
+2. 데이터 품질 점검 — 결측치 / 이상치
+3. 상관관계 (레벨 · 변화율) — 지표 135개 전부
+4. 업종 큐레이션 검증
+5. **추세·계절성 검증과 귀무 기준선** ← 앞 절의 상관계수를 믿어도 되는지 재는 곳
+6. 시차(lag) 상관관계
+7. 결론과 한계
 
-> **주의**: 표본이 18~26개 분기(연간은 6개)로 작다. 상관계수는 확정된 관계가 아니라
-> 가설 후보로만 해석할 것."""),
+> **먼저 읽을 것**: 3·4·6절의 상관계수를 액면 그대로 받아들이면 안 된다. 5절의 귀무 기준선에서
+> **네 계열사 모두 노이즈 바닥을 넘지 못했다.** 표본이 분기 18~26개인데 지표를 119개 시험하기
+> 때문이다. 결론은 7절에 정리했다."""),
 
 ("md", "## 0. 환경 설정"),
 
@@ -141,8 +144,11 @@ pd.DataFrame([
 
 ("md", """## 3. 상관관계 (레벨 · 변화율)
 
-어떤 지표를 볼지는 백엔드 `registry.AFFILIATE_CATEGORY_INDICATOR_CATEGORIES`의 업종별
-큐레이션을 그대로 쓴다 — 노트북에서 따로 적으면 대시보드와 어긋난다.
+**지표는 업종으로 좁히지 않고 135개 전부 본다.** 백엔드
+`registry.AFFILIATE_CATEGORY_INDICATOR_CATEGORIES`의 업종별 매핑은 계열사 매출 시계열이
+없던 시절 업종 상식으로 손수 정한 것이라(registry.py 주석에도 "그 데이터가 생기면 실측
+상관관계로 교체하면 된다"고 적혀 있다), 그걸로 미리 걸러버리면 매핑이 맞는지 틀렸는지를
+데이터로 확인할 수가 없다. 대신 각 지표가 그 큐레이션 안에 있었는지를 `큐레` 열로 표시한다.
 
 각 매출 구간에 대해 그 구간 안 지표 값의 평균을 맞춰 정렬한 뒤,
 - **레벨**: 값 그대로의 상관 — 둘 다 우상향하기만 해도 크게 나온다
@@ -153,14 +159,15 @@ pd.DataFrame([
 ("code", """MIN_N = 6
 results = {}
 
+all_series = {
+    f"{i}::{s}": g.set_index("date")["value"].sort_index()
+    for (i, s), g in points.groupby(["indicator_id", "series_name"])
+}
+print(f"전체 지표 시계열 {len(all_series)}개")
+
 for label, category, *_ in rc.TARGETS:
     rev = revenue[revenue.label == label].set_index("period_to")
-    ids = rc.indicator_ids_for(category)
-    sub = points[points.indicator_id.isin(ids)]
-    all_series = {
-        f"{i}::{s}": g.set_index("date")["value"].sort_index()
-        for (i, s), g in sub.groupby(["indicator_id", "series_name"])
-    }
+    curated = set(rc.indicator_ids_for(category))
     if len(rev) < MIN_N:
         print(f"{label}: 구간 {len(rev)}개뿐이라 건너뜀 (최소 {MIN_N})")
         continue
@@ -173,8 +180,11 @@ for label, category, *_ in rc.TARGETS:
     pct = aligned.drop(columns=["period_from"]).pct_change().dropna(how="all")
     change = eda_utils.corr_table(pct, all_series, "revenue", min_n=min_n)
     results[label] = {"aligned": aligned, "level": level, "change": change,
-                      "series": all_series, "n": len(rev), "min_n": min_n}
-    print(f"{label}: 구간 {len(rev)} · 지표 {len(all_series)} · 레벨 {len(level)} · 변화율 {len(change)}")"""),
+                      "series": all_series, "n": len(rev), "min_n": min_n,
+                      "curated": curated}
+    n_cur = sum(1 for k in all_series if k.split("::")[0] in curated)
+    print(f"{label}: 구간 {len(rev)} · 레벨 {len(level)} · 변화율 {len(change)}"
+          f" · 업종 큐레이션에 있던 지표 {n_cur}/{len(all_series)}")"""),
 
 ("code", """def top_table(label: str, top_n: int = 12) -> pd.DataFrame:
     \"\"\"레벨 상관 상위 지표에 변화율 상관을 붙이고, 둘 다 같은 부호로 남으면 '견고'로 표시.\"\"\"
@@ -189,6 +199,7 @@ for label, category, *_ in rc.TARGETS:
             "변화율_r": None if c is None else round(c, 2),
             "n": row.n,
             "견고": "*" if c is not None and c * row.pearson > 0 and abs(c) > 0.3 else "",
+            "큐레": "O" if row.indicator.split("::")[0] in r["curated"] else "X",
         })
     return pd.DataFrame(rows)
 
@@ -201,7 +212,114 @@ for label in results:
         continue
     eda_utils.plot_top_correlations(results[label]["level"], f"{label} — 레벨 상관 상위", top_n=12)"""),
 
-("md", """## 4. 시차(lag) 상관관계
+("md", """## 4. 업종 큐레이션 검증
+
+`registry.py`의 업종별 지표 매핑이 위 견고 신호를 얼마나 잡아냈는지 센다.
+
+> 이 표만 보면 "큐레이션이 신호의 절반 이상을 놓쳤으니 실측으로 교체하자"는 결론이 나오는데,
+> **그 결론은 틀렸다.** 다음 절(5)의 귀무 기준선을 반드시 같이 볼 것 — 여기서 세는 "견고 신호"의
+> 대부분이 노이즈와 구분되지 않는다."""),
+
+("code", """rows = []
+for label, r in results.items():
+    chg = r["change"].set_index("indicator")["pearson"].to_dict()
+    robust = [
+        row.indicator for _, row in r["level"].iterrows()
+        if (c := chg.get(row.indicator)) is not None and c * row.pearson > 0 and abs(c) > 0.3
+    ]
+    outside = [i for i in robust if i.split("::")[0] not in r["curated"]]
+    rows.append({"계열사": label, "구간": r["n"], "견고_신호": len(robust),
+                 "큐레이션_밖": len(outside),
+                 "놓친_지표": ", ".join(sorted({i.split("::")[0] for i in outside}))})
+pd.DataFrame(rows)"""),
+
+("md", """## 5. 추세·계절성 검증과 귀무 기준선
+
+여기가 이 노트북에서 제일 중요한 절이다. 앞의 상관계수들을 액면 그대로 믿으면 안 되는 이유를 잰다.
+
+**세 가지를 같이 본다.**
+- `추세_r` — 지표와 시간(구간 순번)의 상관. 절댓값이 크면 그 지표는 사실상 시간의 대리변수라
+  우상향하는 무엇과도 상관이 높게 나온다. 예: 가계신용은 2020년 이후 거의 단조 증가한다.
+- `YoY_r` — 매출·지표를 둘 다 전년동기대비 변화율로 바꾼 뒤의 상관. 레벨 상관은 둘 다
+  우상향하기만 해도 커지고, 분기 변화율(QoQ)은 매출 계절성(4분기 급증) 때문에 톱니파가 되어
+  진동하는 지표와 우연히 붙는다. YoY는 추세와 계절성을 동시에 걷어낸다.
+- **귀무 기준선** — 매출 시계열을 순환 이동시켜(실제 타이밍 관계는 깨고 매출 자체의 자기상관은
+  보존) 같은 기준으로 생존 개수를 다시 센다. 관계가 전혀 없을 때 몇 개가 통과하는지가 노이즈
+  바닥이다. 실제 생존 수가 이 바닥을 못 넘으면 생존 목록 전체를 신호로 읽으면 안 된다.
+
+YoY는 4구간을 잃으므로 분기 12개 이상인 계열사만 검증할 수 있다."""),
+
+("code", """NULL_THRESHOLD = 0.3
+
+
+def yoy(df, lag=4):
+    return (df / df.shift(lag) - 1).dropna(how="all")
+
+
+verdicts, detail = [], {}
+for label, r in results.items():
+    values = r["aligned"].drop(columns=["period_from"])
+    if len(values) < 12:
+        verdicts.append({"계열사": label, "n_YoY": None, "실제_생존": None, "귀무_중앙": None,
+                         "귀무_최대": None, "p": None, "판정": "검증 불가 (분기 12개 이상 필요)"})
+        continue
+
+    keys = list(r["level"].indicator)
+    y4 = yoy(values)
+    y = y4["revenue"]
+    time_idx = pd.Series(range(len(values)), index=values.index, dtype=float)
+
+    rows = []
+    for _, row in r["level"].iterrows():
+        k = row.indicator
+        pair = y4[["revenue", k]].dropna()
+        yoy_r = pair["revenue"].corr(pair[k]) if len(pair) >= MIN_N else float("nan")
+        rows.append({
+            "지표": k,
+            "레벨_r": round(row.pearson, 2),
+            "추세_r": round(values[k].corr(time_idx), 2),
+            "YoY_r": None if pd.isna(yoy_r) else round(yoy_r, 2),
+            "생존": bool(pd.notna(yoy_r) and yoy_r * row.pearson > 0 and abs(yoy_r) > NULL_THRESHOLD),
+        })
+    detail[label] = pd.DataFrame(rows)
+    n_survived = int(detail[label]["생존"].sum())
+
+    def count(target, keys=keys, y4=y4):
+        merged = pd.concat([target.rename("_r"), y4[keys]], axis=1).dropna(how="all")
+        return int((merged[keys].corrwith(merged["_r"]).abs() > NULL_THRESHOLD).sum())
+
+    null = pd.Series([count(pd.Series(list(y.values[-k:]) + list(y.values[:-k]), index=y.index))
+                      for k in range(1, len(y))])
+    p = float((null >= n_survived).mean())
+    verdicts.append({
+        "계열사": label, "n_YoY": len(y), "실제_생존": n_survived,
+        "귀무_중앙": int(null.median()), "귀무_최대": int(null.max()), "p": round(p, 2),
+        "판정": "노이즈와 구분 안 됨" if p > 0.05 else "노이즈 바닥 초과",
+    })
+
+pd.DataFrame(verdicts)"""),
+
+("md", """### 계열사별 상위 지표의 생존 여부
+
+`추세_r`이 크면서 `YoY_r`이 무너지는 지표가 전형적인 추세 동조다."""),
+
+("code", """for label, df in detail.items():
+    print(f"{label} — 전체 {len(df)}개 중 생존 {int(df['생존'].sum())}개")
+    display(df.head(15))"""),
+
+("md", """### 같은 지표인데 계열사마다 부호가 뒤집히는가
+
+실제 경제적 연동이라면 부호가 일관돼야 한다. 계열사마다 방향이 반대로 나오는 지표는
+우연히 맞은 것으로 봐야 한다."""),
+
+("code", """wide = pd.concat(
+    {label: df.set_index("지표")["YoY_r"] for label, df in detail.items()}, axis=1
+)
+flip = wide.dropna(thresh=3)
+flip = flip[(flip > 0).sum(axis=1).between(1, len(flip.columns) - 1)]
+flip.assign(부호뒤집힘=True).sort_index().head(20)"""),
+
+("md", """## 6. 시차(lag) 상관관계
 
 지표가 t-L 구간, 매출이 t 구간일 때의 상관을 lag 0~3에 대해 계산한다.
 분기 시계열이 있는 4곳만 의미가 있다 (연간 6개 구간에 lag를 걸면 표본이 3개로 줄어든다).
@@ -223,7 +341,25 @@ for label in QUARTERLY:
     if not lag_df.empty:
         eda_utils.plot_lag_heatmap(lag_df, f"{label} — 지표(t-L) vs 매출(t)", max_lag=4, top_n=12)"""),
 
-("md", """## 5. 결론과 한계
+("md", """## 7. 결론과 한계
+
+### 핵심 결론: 이 상관계수들로 registry 매핑을 교체하면 안 된다
+
+귀무 기준선(5절)이 결정적이다. 매출을 순환 이동시켜 실제 타이밍 관계를 없애도 지표 119개 중
+40~60개가 "생존"으로 통과한다. 그게 노이즈 바닥이고, **네 계열사 모두 실제 생존 수가 그 바닥을
+유의하게 넘지 못했다** (p = 0.08 ~ 1.00). 삼양패키징은 실제 생존(19개)이 귀무 중앙값(41개)보다
+오히려 적다.
+
+4절의 "큐레이션이 신호의 절반 이상을 놓쳤다"는 표는 그래서 **놓친 게 아니라 애초에 신호가
+아니었다**로 읽어야 한다. 표본이 이 정도일 때는 큐레이션처럼 가설을 미리 좁히는 쪽이 옳다.
+
+부호 일관성도 같은 결론을 가리킨다. `household_credit`은 삼양홀딩스에서 +, 삼양사(식품)에서 -로
+방향이 뒤집힌다 (6절 마지막 표). 실제 경제적 연동이라면 나올 수 없는 패턴이다.
+
+### 왜 이렇게 되는가
+- 매출 관측치가 분기 18~26개인데 지표를 119개 시험한다. 다중비교만으로도 상당수가 통과한다.
+- YoY는 4구간이 겹치는 이동창이라 자기상관이 심하다. 표본 14~22개의 유효 자유도는 그보다 훨씬 작다.
+- 2020~2026 구간은 매출도 지표도 대부분 우상향한다. 레벨 상관은 이 공통 추세만으로 0.7~0.9가 나온다.
 
 ### 데이터 품질
 - 매출 시계열: 결측·중복·이상치 **0건**. 다만 삼양사 부문별 매출은 2020~2021 상반기 공시의
@@ -235,12 +371,20 @@ for label in QUARTERLY:
   분기 평균으로 집계하는 순간 사라진다.
 
 ### 분석 한계
-- **표본**: 분기 18~23개, 연간 6개. 연간 2곳(이노켐·데이타시스템)은 레벨 상관만 나오고
-  변화율은 n=5로 계산조차 안 된다. 참고용 이상으로 쓰면 안 된다.
+- **표본**: 분기 18~26개, 연간 6개. 연간 2곳(이노켐·데이타시스템)은 레벨 상관만 나오고
+  변화율·YoY는 계산조차 안 된다. 참고용 이상으로 쓰면 안 된다.
 - **레벨 상관의 함정**: 매출과 지표가 둘 다 우상향하면 인과 없이도 |r| 0.7~0.9가 나온다.
-  위 표의 `견고` 표시(변화율에서도 같은 부호로 남음)가 없는 항목은 추세 동조일 가능성이 크다.
-- **다중비교**: 계열사마다 지표 30~75개 × lag 4개를 훑어 상위를 고른다. 우연히 강한 값이
-  섞이는 걸 피할 수 없으므로, 업종 상식으로 설명되는 지표만 채택할 것.
+  3절의 `견고` 표시만으로는 부족하고, 5절의 `추세_r`·`YoY_r`·귀무 기준선까지 봐야 한다.
+- **lag 분석(6절)은 특히 위험하다**: 지표 119개 × lag 4개를 훑어 최댓값을 고른다.
+  레벨 상관조차 노이즈 바닥을 못 넘는 상황이라, 여기 나오는 선행지표는 가설 후보로도 약하다.
+
+### 그래서 무엇을 해야 하나
+1. **registry 매핑은 지금 그대로 둔다.** 업종 지식 기반 큐레이션은 이 표본 크기에서
+   과적합을 막는 사전 제약으로 기능한다. 교체는 표본이 충분해진 뒤로 미룬다.
+2. **표본을 늘린다.** `RAG/fetch_dart.py`로 삼양사·패키징·홀딩스 공시를 2015년부터 받으면
+   분기가 26 → 44개까지 늘어난다. 그래도 119개 동시 시험은 무리다.
+3. **가설을 먼저 좁힌다.** 계열사별로 업종 근거가 분명한 지표 5~10개만 사전에 정해두고
+   그것만 검정하면 다중비교 부담이 사라진다. 예: 식품↔설탕·곡물, 패키징↔PET·유가.
 
 ### 다음 단계 후보
 - 삼양엔씨켐: 2020~2023 감사보고서(구 "엔씨켐")에서 매출을 못 뽑은 건이 있어 구간이 5개다.

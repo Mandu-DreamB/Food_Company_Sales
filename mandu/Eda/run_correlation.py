@@ -182,19 +182,26 @@ def main(rebuild: bool = False) -> None:
     OUT_DIR.mkdir(exist_ok=True)
     summary = []
 
+    # 지표는 업종 큐레이션으로 좁히지 않고 전부 본다. registry의 업종별 매핑은 계열사 매출
+    # 시계열이 없던 시절 업종 상식으로 손수 정한 것이라(registry.py 주석 참고), 그걸로 미리
+    # 걸러버리면 매핑이 맞는지 틀렸는지를 데이터로 확인할 수가 없다. 대신 각 지표가 큐레이션
+    # 안에 있었는지를 표시해서, 그 매핑을 실측으로 교체할 근거를 남긴다.
+    all_series = {
+        f"{i}::{s}": g.set_index("date")["value"].sort_index()
+        for (i, s), g in points.groupby(["indicator_id", "series_name"])
+    }
+    print(f"전체 지표 시계열 {len(all_series)}개")
+
     for label, category, _, _, _ in TARGETS:
         rev = revenue[revenue.label == label].set_index("period_to")
-        ids = indicator_ids_for(category)
-        sub = points[points.indicator_id.isin(ids)]
-        all_series = {
-            f"{i}::{s}": g.set_index("date")["value"].sort_index()
-            for (i, s), g in sub.groupby(["indicator_id", "series_name"])
-        }
+        curated = set(indicator_ids_for(category))
+        n_curated = sum(1 for k in all_series if k.split("::")[0] in curated)
 
-        print(f"\n{'=' * 78}\n{label}  [{category}]  구간 {len(rev)}개 · 지표 {len(all_series)}개")
+        print(f"\n{'=' * 78}\n{label}  [{category}]  구간 {len(rev)}개 · "
+              f"지표 {len(all_series)}개 (업종 큐레이션 {n_curated}개)")
         if len(rev) < MIN_N:
             print(f"  건너뜀: 구간이 {len(rev)}개뿐이라 상관계수를 낼 수 없습니다 (최소 {MIN_N})")
-            summary.append((label, len(rev), None, None))
+            summary.append((label, len(rev), None, None, None))
             continue
 
         # 매출 구간의 절반 이상 겹치는 지표만 본다. 연 1회 지표(n=6)를 26분기 매출과
@@ -211,25 +218,147 @@ def main(rebuild: bool = False) -> None:
         # 레벨 상관은 매출과 지표가 둘 다 우상향하기만 해도 크게 나온다. 변화율에서도 같은
         # 부호로 남는 지표만 실제 연동으로 보고 *로 표시한다.
         chg = change.set_index("indicator")["pearson"].to_dict()
-        print(f"  {'지표':<44}{'레벨r':>8}{'변화율r':>9}{'n':>4}")
-        for _, row in level.head(10).iterrows():
-            c = chg.get(row.indicator)
-            mark = " *" if c is not None and c * row.pearson > 0 and abs(c) > 0.3 else ""
-            cell = f"{c:>9.2f}" if c is not None else "        -"
-            print(f"  {row.indicator[:43]:<44}{row.pearson:>8.2f}{cell}{row.n:>4}{mark}")
-        robust = sum(
-            1 for _, r in level.iterrows()
-            if (c := chg.get(r.indicator)) is not None and c * r.pearson > 0 and abs(c) > 0.3
-        )
-        summary.append((label, len(rev), len(level), robust))
 
-    print(f"\n{'=' * 78}\n요약  (견고 = 레벨·변화율 양쪽에서 같은 부호로 남은 지표 수)")
-    print(f"{'계열사':<20}{'구간':>5}{'지표':>6}{'견고':>6}")
-    for label, n, n_ind, robust in summary:
-        print(f"{label:<20}{n:>5}{(n_ind if n_ind is not None else '-'):>6}"
-              f"{(robust if robust is not None else '-'):>6}")
+        def is_robust(indicator: str, level_r: float) -> bool:
+            c = chg.get(indicator)
+            return c is not None and c * level_r > 0 and abs(c) > 0.3
+
+        print(f"  {'지표':<44}{'레벨r':>8}{'변화율r':>9}{'n':>4}  큐레")
+        for _, row in level.head(12).iterrows():
+            c = chg.get(row.indicator)
+            cell = f"{c:>9.2f}" if c is not None else "        -"
+            mark = " *" if is_robust(row.indicator, row.pearson) else "  "
+            inside = "O" if row.indicator.split("::")[0] in curated else "X"
+            print(f"  {row.indicator[:43]:<44}{row.pearson:>8.2f}{cell}{row.n:>4}{mark}  {inside}")
+
+        robust_rows = [r for _, r in level.iterrows() if is_robust(r.indicator, r.pearson)]
+        outside = [r.indicator for r in robust_rows if r.indicator.split("::")[0] not in curated]
+        if outside:
+            print(f"  → 견고 신호 {len(robust_rows)}개 중 {len(outside)}개가 업종 큐레이션 밖:")
+            for name in outside[:8]:
+                print(f"      {name}")
+            if len(outside) > 8:
+                print(f"      ... 외 {len(outside) - 8}개")
+        summary.append((label, len(rev), len(level), len(robust_rows), len(outside)))
+
+    print(f"\n{'=' * 78}\n요약  (견고 = 레벨·변화율 양쪽에서 같은 부호로 남은 지표 수,"
+          f"\n       큐레밖 = 그중 registry 업종 매핑에 없던 지표 수)")
+    print(f"{'계열사':<20}{'구간':>5}{'지표':>6}{'견고':>6}{'큐레밖':>7}")
+    for label, n, *cells in summary:
+        row = "".join(f"{(c if c is not None else '-'):>{w}}" for c, w in zip(cells, (6, 6, 7)))
+        print(f"{label:<20}{n:>5}{row}")
     print(f"\n상세 CSV: {OUT_DIR}")
 
 
+# ---------------------------------------------------------------------------
+# 추세/계절성 검증 (--verify)
+# ---------------------------------------------------------------------------
+
+def _yoy(df: pd.DataFrame, lag: int = 4) -> pd.DataFrame:
+    """전년동기대비 변화율.
+
+    레벨 상관은 매출과 지표가 둘 다 우상향하기만 해도 커지고, 분기 변화율(QoQ)은 매출
+    계절성(4분기 급증) 때문에 톱니파가 되어 진동하는 지표와 우연히 붙는다. YoY는 추세와
+    계절성을 동시에 걷어내므로, 여기서도 남는 상관만 실제 연동으로 볼 수 있다."""
+    return (df / df.shift(lag) - 1).dropna(how="all")
+
+
+def verify_trend(top_n: int = 15) -> None:
+    """레벨 상관 상위 지표가 추세를 걷어낸 뒤에도 살아남는지 본다.
+
+    함께 보는 값:
+      추세r = 지표와 시간(구간 순번)의 상관. 절댓값이 크면 그 지표는 사실상 시간의 대리변수라
+              우상향하는 무엇과도 상관이 높게 나온다.
+      YoYr  = 매출·지표를 둘 다 전년동기대비 변화율로 바꾼 뒤의 상관.
+    판정: YoY에서도 레벨과 같은 부호로 |r| > 0.3이면 '생존', 아니면 '추세동조'.
+    """
+    from dotenv import load_dotenv
+    from sqlalchemy import create_engine, text
+    import eda_utils
+
+    load_dotenv(ROOT / "dashboard" / "backend" / ".env")
+    engine = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
+    with engine.connect() as conn:
+        points = pd.read_sql(
+            text("SELECT indicator_id, series_name, date, value FROM indicator_points"),
+            conn, parse_dates=["date"],
+        )
+    all_series = {
+        f"{i}::{s}": g.set_index("date")["value"].sort_index()
+        for (i, s), g in points.groupby(["indicator_id", "series_name"])
+    }
+    revenue = load_revenue(False)
+    OUT_DIR.mkdir(exist_ok=True)
+
+    for label, category, _, _, _ in TARGETS:
+        rev = revenue[revenue.label == label].set_index("period_to")
+        bar = "=" * 84
+        if len(rev) < 12:  # YoY는 4구간을 잃는다. 연간 계열사는 검증 자체가 불가능하다.
+            print(f"\n{bar}\n{label}: 구간 {len(rev)}개 — YoY 검증 불가 (분기 12개 이상 필요)")
+            continue
+
+        min_n = max(MIN_N, len(rev) // 2)
+        aligned = eda_utils.align_indicators_to_periods(rev, "revenue", all_series)
+        level = eda_utils.corr_table(aligned, all_series, "revenue", min_n=min_n)
+        values = aligned.drop(columns=["period_from"])
+        yoy = _yoy(values)
+        time_idx = pd.Series(range(len(values)), index=values.index, dtype=float)
+        rev_trend = values["revenue"].corr(time_idx)
+
+        print(f"\n{bar}\n{label}  구간 {len(rev)}개 · 매출의 추세r {rev_trend:+.2f}")
+        print(f"  {'지표':<42}{'레벨r':>7}{'추세r':>7}{'YoYr':>7}{'n':>4}  판정")
+
+        rows = []
+        for _, row in level.iterrows():
+            key = row.indicator
+            trend_r = values[key].corr(time_idx)
+            pair = yoy[["revenue", key]].dropna()
+            yoy_r = pair["revenue"].corr(pair[key]) if len(pair) >= MIN_N else float("nan")
+            ok = pd.notna(yoy_r) and yoy_r * row.pearson > 0 and abs(yoy_r) > 0.3
+            rows.append({"indicator": key, "level_r": row.pearson, "trend_r": trend_r,
+                         "yoy_r": yoy_r, "n_yoy": len(pair), "survived": ok})
+
+        for r in rows[:top_n]:
+            cell = f"{r['yoy_r']:>7.2f}" if pd.notna(r["yoy_r"]) else "      -"
+            print(f"  {r['indicator'][:41]:<42}{r['level_r']:>7.2f}{r['trend_r']:>7.2f}"
+                  f"{cell}{r['n_yoy']:>4}  {'생존' if r['survived'] else '추세동조'}")
+
+        survivors = [r for r in rows if r["survived"]]
+        print(f"  → 상위 {top_n}개 중 {sum(r['survived'] for r in rows[:top_n])}개 생존"
+              f" · 전체 {len(rows)}개 중 {len(survivors)}개 생존")
+
+        # 귀무 기준선. YoY는 겹치는 구간이라 자기상관이 심하고, n이 14~22인데 지표를 119개나
+        # 시험하면 아무 관계 없이도 상당수가 |r| > 0.3을 넘는다. 매출을 순환 이동시켜(실제
+        # 타이밍 관계는 깨고 매출 자체의 자기상관은 보존) 같은 기준으로 세면 그 노이즈 바닥이
+        # 나온다. 실제 생존 수가 이 바닥을 못 넘으면 생존 목록 전체를 신호로 읽으면 안 된다.
+        keys = [r["indicator"] for r in rows]
+        y = yoy["revenue"]
+
+        def _count(target: pd.Series) -> int:
+            merged = pd.concat([target.rename("_r"), yoy[keys]], axis=1).dropna(how="all")
+            return int((merged[keys].corrwith(merged["_r"]).abs() > 0.3).sum())
+
+        def _rotate(values, k):
+            return list(values[-k:]) + list(values[:-k])
+
+        null = pd.Series([_count(pd.Series(_rotate(y.values, k), index=y.index))
+                          for k in range(1, len(y))])
+        p_value = (null >= len(survivors)).mean()
+        print(f"  귀무 기준선(매출 순환이동 {len(null)}회): 중앙 {int(null.median())}개 ·"
+              f" 최대 {null.max()}개 → p = {p_value:.2f}"
+              f"  {'[노이즈 바닥을 못 넘음 — 생존 목록을 신호로 읽지 말 것]' if p_value > 0.05 else ''}")
+        if survivors:
+            print("  생존 지표(YoY |r| 순):")
+            for r in sorted(survivors, key=lambda r: -abs(r["yoy_r"]))[:10]:
+                print(f"      {r['indicator'][:45]:<46} YoYr {r['yoy_r']:+.2f}  추세r {r['trend_r']:+.2f}")
+        pd.DataFrame(rows).to_csv(OUT_DIR / f"verify_trend_{label}.csv",
+                                  index=False, encoding="utf-8-sig")
+
+
+
+
 if __name__ == "__main__":
-    main("--rebuild" in sys.argv)
+    if "--verify" in sys.argv:
+        verify_trend()
+    else:
+        main("--rebuild" in sys.argv)
