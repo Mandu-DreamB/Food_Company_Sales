@@ -13,8 +13,17 @@ from datetime import datetime, timezone
 
 from openai import OpenAI
 
-from .registry import AFFILIATE_CATEGORY_INDICATOR_CATEGORIES, INDICATORS
-from .store import read_affiliates, read_briefing, read_stale_cache, write_briefing, write_briefing_error
+from .registry import AFFILIATE_CATEGORY_INDICATOR_CATEGORIES, AFFILIATE_TOP_INDICATORS, INDICATORS, INDICATORS_BY_ID
+from .store import (
+    read_affiliates,
+    read_briefing,
+    read_indicator_briefing,
+    read_stale_cache,
+    write_briefing,
+    write_briefing_error,
+    write_indicator_briefing,
+    write_indicator_briefing_error,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -132,5 +141,78 @@ def generate_all_briefings(*, force: bool = False) -> dict[str, str]:
             write_briefing_error(affiliate_id, str(exc), now)
             logger.warning("briefing generation failed id=%s error=%s", affiliate_id, exc)
             results[affiliate_id] = "error"
+
+    return results
+
+
+INDICATOR_PROMPT_TEMPLATE = """당신은 경제지표를 요약하는 애널리스트입니다. 아래는 "{title}" 지표의 \
+최근 동향입니다.
+
+{facts}
+
+이 데이터만 근거로, 1~2문장의 간결한 한국어 요약을 작성하세요.
+- 숫자를 인용할 때는 위에 주어진 값만 사용하고 새로 지어내지 마세요.
+- 특별히 눈에 띄는 변화가 없으면 억지로 의미를 부여하지 말고 그렇다고 담백하게 말하세요.
+- 존댓말로 작성하세요."""
+
+
+def generate_indicator_briefing(indicator_title: str, indicator_id: str) -> str:
+    client = _get_client()
+    if client is None:
+        raise RuntimeError("OPENAI_API_KEY가 설정되지 않았습니다.")
+
+    cached = read_stale_cache(indicator_id)
+    facts = []
+    if cached is not None and cached["status"] == "ok":
+        for s in cached["series"]:
+            fact = _series_fact(indicator_title, s["name"], s["points"])
+            if fact:
+                facts.append(fact)
+
+    if not facts:
+        return f"{indicator_title} 지표 데이터가 아직 충분하지 않아 요약을 생성할 수 없습니다."
+
+    prompt = INDICATOR_PROMPT_TEMPLATE.format(title=indicator_title, facts="\n".join(f"- {f}" for f in facts))
+    response = client.chat.completions.create(
+        model=BRIEFING_MODEL,
+        temperature=0.2,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return response.choices[0].message.content.strip()
+
+
+def _indicator_is_fresh(indicator_id: str) -> bool:
+    briefing = read_indicator_briefing(indicator_id)
+    if briefing is None or briefing["status"] != "ok":
+        return False
+    age = (datetime.now(timezone.utc) - datetime.fromisoformat(briefing["generated_at"])).total_seconds()
+    return age <= BRIEFING_TTL_SECONDS
+
+
+def generate_all_indicator_briefings(*, force: bool = False) -> dict[str, str]:
+    """AFFILIATE_TOP_INDICATORS에 등장하는 지표만 갱신 (계열사 여러 곳에서 같은 지표를 써도
+    한 번만 생성한다). 스케줄러 전용 — API 요청 경로에서는 호출하지 않는다.
+    반환값은 'skipped_fresh' | 'ok' | 'error'."""
+    results = {}
+    indicator_ids = sorted({ind_id for ids in AFFILIATE_TOP_INDICATORS.values() for ind_id in ids})
+
+    for indicator_id in indicator_ids:
+        if not force and _indicator_is_fresh(indicator_id):
+            results[indicator_id] = "skipped_fresh"
+            continue
+
+        indicator = INDICATORS_BY_ID.get(indicator_id)
+        if indicator is None:
+            continue
+
+        now = datetime.now(timezone.utc)
+        try:
+            text = generate_indicator_briefing(indicator.title, indicator_id)
+            write_indicator_briefing(indicator_id, text, now)
+            results[indicator_id] = "ok"
+        except Exception as exc:
+            write_indicator_briefing_error(indicator_id, str(exc), now)
+            logger.warning("indicator briefing generation failed id=%s error=%s", indicator_id, exc)
+            results[indicator_id] = "error"
 
     return results

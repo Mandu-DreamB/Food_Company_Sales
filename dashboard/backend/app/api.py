@@ -1,9 +1,17 @@
 from fastapi import APIRouter, HTTPException, Query
 
 from .config import missing_env
-from .registry import AFFILIATE_CATEGORY_INDICATOR_CATEGORIES, INDICATORS, INDICATORS_BY_ID, Indicator
-from .store import read_affiliates, read_all_logs, read_briefing, read_stale_cache
-from .schemas import AffiliateList, BriefingResult, IndicatorResult
+from .registry import (
+    AFFILIATE_CATEGORY_INDICATOR_CATEGORIES,
+    AFFILIATE_OVERVIEW_SOURCES,
+    AFFILIATE_OVERVIEWS,
+    AFFILIATE_TOP_INDICATORS,
+    INDICATORS,
+    INDICATORS_BY_ID,
+    Indicator,
+)
+from .store import read_affiliates, read_all_logs, read_briefing, read_indicator_briefing, read_stale_cache
+from .schemas import AffiliateList, BriefingResult, IndicatorResult, IndicatorWithBriefing
 
 router = APIRouter(prefix="/api")
 
@@ -15,6 +23,9 @@ def list_affiliates():
     categories = list(dict.fromkeys(
         row["category"] for row in sorted(rows, key=lambda r: r["category_order"])
     ))
+    for row in rows:
+        row["overview"] = AFFILIATE_OVERVIEWS.get(row["id"])
+        row["overview_sources"] = AFFILIATE_OVERVIEW_SOURCES.get(row["id"], [])
     return AffiliateList(categories=categories, affiliates=rows)
 
 
@@ -86,3 +97,38 @@ def get_source(indicator_id: str):
         return _result(ind, log=None, missing=[])
 
     return _result(ind, log=cached, missing=[], series=cached["series"])
+
+
+@router.get("/affiliates/{affiliate_id}/top-indicators", response_model=list[IndicatorWithBriefing])
+def get_top_indicators(affiliate_id: str):
+    """이 계열사와 가장 연관된 지표 3개(registry.AFFILIATE_TOP_INDICATORS)를 시계열 + AI 요약과
+    함께 반환한다. 아직 큐레이션 안 된 계열사면 빈 리스트."""
+    indicator_ids = AFFILIATE_TOP_INDICATORS.get(affiliate_id, [])
+    results = []
+    for indicator_id in indicator_ids:
+        ind = INDICATORS_BY_ID.get(indicator_id)
+        if ind is None:
+            continue
+
+        missing = missing_env(ind.required_env)
+        if missing:
+            base = _result(ind, log=None, missing=missing)
+        else:
+            cached = read_stale_cache(indicator_id)
+            base = (
+                _result(ind, log=None, missing=[])
+                if cached is None
+                else _result(ind, log=cached, missing=[], series=cached["series"])
+            )
+
+        briefing_row = read_indicator_briefing(indicator_id)
+        briefing = (
+            BriefingResult(status="not_generated")
+            if briefing_row is None
+            else BriefingResult(
+                status=briefing_row["status"], text=briefing_row["text"], generated_at=briefing_row["generated_at"]
+            )
+        )
+        results.append(IndicatorWithBriefing(**base.model_dump(), briefing=briefing))
+
+    return results

@@ -265,11 +265,13 @@ function PriceTooltip({
 
 function LegendRow({
   series,
+  colorMap,
   hidden,
   onToggle,
   onToggleAll,
 }: {
   series: Series[];
+  colorMap: Record<string, string>;
   hidden: Set<string>;
   onToggle: (name: string) => void;
   onToggleAll: () => void;
@@ -282,10 +284,10 @@ function LegendRow({
         <input type="checkbox" checked={allVisible} onChange={onToggleAll} />
         전체
       </label>
-      {series.map((s, i) => (
+      {series.map((s) => (
         <label key={s.name} className="chart-legend-item">
           <input type="checkbox" checked={!hidden.has(s.name)} onChange={() => onToggle(s.name)} />
-          <span className="chart-legend-swatch" style={{ background: colorForIndex(i) }} />
+          <span className="chart-legend-swatch" style={{ background: colorMap[s.name] }} />
           {s.name}
         </label>
       ))}
@@ -296,10 +298,12 @@ function LegendRow({
 function PriceChart({
   data,
   series,
+  colorMap,
   indexed,
 }: {
   data: ChartRow[];
   series: Series[];
+  colorMap: Record<string, string>;
   indexed: boolean;
 }) {
   const zoom = useZoomPan(data.length);
@@ -347,12 +351,12 @@ function PriceChart({
               content={(props) => <PriceTooltip {...props} data={visibleData} suppressed={zoom.dragging} />}
               cursor={zoom.dragging ? false : { stroke: "var(--baseline)", strokeDasharray: "3 3" }}
             />
-            {series.map((s, i) => (
+            {series.map((s) => (
               <Line
                 key={s.name}
                 type="monotone"
                 dataKey={s.name}
-                stroke={colorForIndex(i)}
+                stroke={colorMap[s.name]}
                 strokeWidth={2}
                 dot={false}
                 connectNulls
@@ -440,7 +444,15 @@ function SeriesGrid({ series }: { series: Series[] }) {
   );
 }
 
-function SeriesTable({ data, series }: { data: ChartRow[]; series: Series[] }) {
+function SeriesTable({
+  data,
+  series,
+  colorMap,
+}: {
+  data: ChartRow[];
+  series: Series[];
+  colorMap: Record<string, string>;
+}) {
   return (
     <div className="chart-table-wrap">
       <table className="chart-table">
@@ -448,7 +460,9 @@ function SeriesTable({ data, series }: { data: ChartRow[]; series: Series[] }) {
           <tr>
             <th>날짜</th>
             {series.map((s) => (
-              <th key={s.name}>{s.name}</th>
+              <th key={s.name} style={{ color: colorMap[s.name] }}>
+                {s.name}
+              </th>
             ))}
           </tr>
         </thead>
@@ -492,6 +506,12 @@ export function MultiSeriesChart({ series }: { series: Series[] }) {
   const [hidden, setHidden] = useState<Set<string>>(new Set());
 
   const ranged = useMemo(() => filterByRange(series, range), [series, range]);
+  // 체크박스로 시리즈를 숨겨도 나머지 시리즈 색이 안 바뀌도록, 전체 목록(ranged) 기준으로
+  // 이름 -> 색을 한 번만 고정해서 범례·차트·표가 전부 같은 색을 쓰게 한다.
+  const colorMap = useMemo(
+    () => Object.fromEntries(ranged.map((s, i) => [s.name, colorForIndex(i)])),
+    [ranged],
+  );
   const rawData = useMemo(() => mergeSeries(ranged), [ranged]);
   const indexedSeriesData = useMemo(() => indexSeries(ranged), [ranged]);
   const indexedData = useMemo(() => mergeSeries(indexedSeriesData), [indexedSeriesData]);
@@ -563,7 +583,13 @@ export function MultiSeriesChart({ series }: { series: Series[] }) {
             )}
           </div>
           {hasMultipleSeries && (
-            <LegendRow series={ranged} hidden={hidden} onToggle={toggleSeries} onToggleAll={toggleAll} />
+            <LegendRow
+              series={ranged}
+              colorMap={colorMap}
+              hidden={hidden}
+              onToggle={toggleSeries}
+              onToggleAll={toggleAll}
+            />
           )}
         </div>
 
@@ -571,9 +597,9 @@ export function MultiSeriesChart({ series }: { series: Series[] }) {
           {noData ? (
             <div className="empty-chart">선택한 기간에 데이터가 없습니다.</div>
           ) : viewMode === "chart" ? (
-            <PriceChart data={activeData} series={visibleSeries} indexed={useIndexed} />
+            <PriceChart data={activeData} series={visibleSeries} colorMap={colorMap} indexed={useIndexed} />
           ) : (
-            <SeriesTable data={activeData} series={visibleSeries} />
+            <SeriesTable data={activeData} series={visibleSeries} colorMap={colorMap} />
           )}
         </div>
       </section>

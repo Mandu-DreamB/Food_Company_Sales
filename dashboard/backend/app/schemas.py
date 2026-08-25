@@ -17,6 +17,8 @@ class Affiliate(BaseModel):
     name: str
     category: str
     logo_text: str
+    overview: Optional[str] = None
+    overview_sources: list[str] = []
 
 
 class AffiliateList(BaseModel):
@@ -46,3 +48,9 @@ class IndicatorResult(IndicatorMeta):
     error: Optional[str] = None
     fetched_at: Optional[str] = None
     series: list[Series] = []
+
+
+class IndicatorWithBriefing(IndicatorResult):
+    """계열사 상세 페이지의 '가장 연관된 지표' 카드용 — 지표 데이터 + 그 지표의 AI 요약."""
+
+    briefing: Optional[BriefingResult] = None

@@ -1,4 +1,4 @@
-import type { AffiliateList, BriefingResult, IndicatorResult } from "./types";
+import type { AffiliateList, BriefingResult, IndicatorResult, IndicatorWithBriefing } from "./types";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -24,5 +24,11 @@ export async function listSources(affiliateId?: string): Promise<IndicatorResult
 export async function getSource(id: string): Promise<IndicatorResult> {
   const res = await fetch(`${BASE_URL}/api/sources/${id}`);
   if (!res.ok) throw new Error(`지표를 불러오지 못했습니다 (${res.status})`);
+  return res.json();
+}
+
+export async function getTopIndicators(affiliateId: string): Promise<IndicatorWithBriefing[]> {
+  const res = await fetch(`${BASE_URL}/api/affiliates/${encodeURIComponent(affiliateId)}/top-indicators`);
+  if (!res.ok) throw new Error(`관련 지표를 불러오지 못했습니다 (${res.status})`);
   return res.json();
 }

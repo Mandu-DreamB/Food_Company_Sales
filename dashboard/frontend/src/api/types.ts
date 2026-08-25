@@ -3,6 +3,8 @@ export interface Affiliate {
   name: string;
   category: string;
   logo_text: string;
+  overview: string | null;
+  overview_sources: string[];
 }
 
 export interface AffiliateList {
@@ -37,4 +39,8 @@ export interface IndicatorResult {
   error: string | null;
   fetched_at: string | null;
   series: Series[];
+}
+
+export interface IndicatorWithBriefing extends IndicatorResult {
+  briefing: BriefingResult | null;
 }

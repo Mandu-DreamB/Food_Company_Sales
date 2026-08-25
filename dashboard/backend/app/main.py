@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api import router
-from .briefing import generate_all_briefings
+from .briefing import generate_all_briefings, generate_all_indicator_briefings
 from .collector import collect_all
 from .db import Base, engine
 from . import models  # noqa: F401  (Base.metadata에 테이블 등록)
@@ -30,6 +30,11 @@ def _run_generate_briefings() -> None:
     logger.info("generate_all_briefings finished: %s", results)
 
 
+def _run_generate_indicator_briefings() -> None:
+    results = generate_all_indicator_briefings()
+    logger.info("generate_all_indicator_briefings finished: %s", results)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
@@ -37,6 +42,10 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(_run_collect_all, "interval", minutes=15, id="collect_all", next_run_time=datetime.now())
     scheduler.add_job(
         _run_generate_briefings, "interval", hours=24, id="generate_briefings", next_run_time=datetime.now()
+    )
+    scheduler.add_job(
+        _run_generate_indicator_briefings, "interval", hours=24,
+        id="generate_indicator_briefings", next_run_time=datetime.now(),
     )
     scheduler.start()
     yield

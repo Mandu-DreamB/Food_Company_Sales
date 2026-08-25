@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { getAffiliateBriefing, listAffiliates, listSources } from "../api/client";
-import type { BriefingResult, IndicatorResult } from "../api/types";
-import { IndicatorCard } from "../components/IndicatorCard";
+import { getAffiliateBriefing, getTopIndicators, listAffiliates } from "../api/client";
+import type { BriefingResult, IndicatorWithBriefing } from "../api/types";
+import { MultiSeriesChart } from "../components/MultiSeriesChart";
 import { Spinner } from "../components/Spinner";
-import { groupByCategory } from "../theme";
 
 function Briefing({ affiliateId }: { affiliateId: string }) {
   const [briefing, setBriefing] = useState<BriefingResult | null>(null);
@@ -32,20 +31,114 @@ function Briefing({ affiliateId }: { affiliateId: string }) {
   );
 }
 
+function OverviewSourceInfo({ sources }: { sources: string[] }) {
+  return (
+    <span className="overview-info" tabIndex={0}>
+      <span className="overview-info-icon" aria-hidden="true">
+        i
+      </span>
+      <span className="overview-info-popover" role="tooltip">
+        <span className="overview-info-title">분석 출처</span>
+        {sources.length > 0 ? (
+          <ul className="overview-info-list">
+            {sources.map((source) => (
+              <li key={source}>{source}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="overview-info-empty">
+            공시 자료(사업보고서) 없이 업종 일반 정보로 작성했습니다. 이 계열사는 감사보고서만
+            제출하고 있어 DART에 사업 설명이 공개돼 있지 않습니다.
+          </p>
+        )}
+      </span>
+    </span>
+  );
+}
+
+function CompanyOverview({
+  name,
+  overview,
+  sources,
+}: {
+  name: string;
+  overview: string;
+  sources: string[];
+}) {
+  return (
+    <div className="overview-box">
+      <div className="overview-head">
+        <span className="overview-label">{name} 사업보고서</span>
+        <span className="overview-sublabel">사업보고서(사업의 내용·주요 원재료)</span>
+        <OverviewSourceInfo sources={sources} />
+      </div>
+      {overview.split("\n\n").map((paragraph, i) => (
+        <p key={i} className={"overview-text" + (i === 0 ? " overview-text-lead" : "")}>
+          {paragraph}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function TopIndicatorCard({ source }: { source: IndicatorWithBriefing }) {
+  const briefing = source.briefing;
+  const hasBriefing = briefing && briefing.status !== "not_generated" && briefing.text;
+
+  return (
+    <div className="top-indicator-card">
+      <div className="top-indicator-header">
+        <Link to={`/indicator/${source.id}`} className="top-indicator-title">
+          {source.title}
+        </Link>
+        <div className="top-indicator-meta">
+          {source.category} · {source.unit} · {source.frequency}
+        </div>
+      </div>
+
+      {source.status === "missing_key" ? (
+        <p className="empty-chart">{source.error}</p>
+      ) : source.series.length === 0 ? (
+        <p className="empty-chart">아직 수집된 데이터가 없습니다.</p>
+      ) : (
+        <MultiSeriesChart series={source.series} />
+      )}
+
+      {hasBriefing && (
+        <div className="briefing-box">
+          <div className="briefing-label">AI 요약</div>
+          <p className="briefing-text">{briefing!.text}</p>
+          {briefing!.generated_at && (
+            <div className="briefing-time">
+              {new Date(briefing!.generated_at).toLocaleString("ko-KR")} 기준
+              {briefing!.status === "error" && " · 최신 갱신 실패, 이전 요약을 보여줍니다"}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function CompanyDashboard() {
   const { affiliateId } = useParams<{ affiliateId: string }>();
   const [name, setName] = useState<string | null>(null);
-  const [sources, setSources] = useState<IndicatorResult[]>([]);
+  const [overview, setOverview] = useState<string | null>(null);
+  const [overviewSources, setOverviewSources] = useState<string[]>([]);
+  const [sources, setSources] = useState<IndicatorWithBriefing[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!affiliateId) return;
     setLoading(true);
-    Promise.all([listSources(affiliateId), listAffiliates()])
+    Promise.all([getTopIndicators(affiliateId), listAffiliates()])
       .then(([sourcesData, affiliateData]) => {
         setSources(sourcesData);
-        setName(affiliateData.affiliates.find((a) => a.id === affiliateId)?.name ?? null);
+        const affiliate = affiliateData.affiliates.find((a) => a.id === affiliateId);
+        setName(affiliate?.name ?? null);
+        setOverview(affiliate?.overview ?? null);
+        setOverviewSources(affiliate?.overview_sources ?? []);
         setError(null);
       })
       .catch((err) => setError(err.message))
@@ -58,22 +151,15 @@ export function CompanyDashboard() {
   return (
     <div className="page">
       <h1>{name ?? "계열사"} 관련 지표</h1>
-      <p className="page-subtitle">
-        이 계열사 업종과 관련도가 높은 {sources.length}개 지표입니다 ·{" "}
-        <Link to="/dashboard">전체 지표 보기</Link>
-      </p>
-      {affiliateId && <Briefing affiliateId={affiliateId} />}
+      <p className="page-subtitle">이 계열사와 가장 연관도가 높은 지표 {sources.length}개입니다.</p>
+      {name && overview && <CompanyOverview name={name} overview={overview} sources={overviewSources} />}
       {sources.length === 0 && <div className="page-state">관련된 지표가 아직 없습니다.</div>}
-      {groupByCategory(sources).map(([category, items]) => (
-        <section key={category} className="dashboard-section">
-          <h2>{category}</h2>
-          <div className="card-grid">
-            {items.map((source) => (
-              <IndicatorCard key={source.id} source={source} />
-            ))}
-          </div>
-        </section>
-      ))}
+      <div className="top-indicator-stack">
+        {sources.map((source) => (
+          <TopIndicatorCard key={source.id} source={source} />
+        ))}
+      </div>
+      {affiliateId && <Briefing affiliateId={affiliateId} />}
     </div>
   );
 }

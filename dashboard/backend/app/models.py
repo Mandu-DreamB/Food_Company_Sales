@@ -57,3 +57,16 @@ class AffiliateBriefing(Base):
     generated_at = Column(DateTime(timezone=True), nullable=False)
     status = Column(String, nullable=False)
     error = Column(Text, nullable=True)
+
+
+class IndicatorBriefing(Base):
+    """지표 1개의 최신 AI 요약 (registry.AFFILIATE_TOP_INDICATORS에 등장하는 지표만 생성).
+    AffiliateBriefing과 같은 이유로 요청 경로에서 생성하지 않고 스케줄러가 미리 채워 둔다."""
+
+    __tablename__ = "indicator_briefings"
+
+    indicator_id = Column(String, primary_key=True)
+    text = Column(Text, nullable=True)
+    generated_at = Column(DateTime(timezone=True), nullable=False)
+    status = Column(String, nullable=False)
+    error = Column(Text, nullable=True)
