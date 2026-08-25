@@ -81,11 +81,14 @@ export function Sidebar() {
 
   return (
     <nav className="sidebar">
-      <Link to="/" className="sidebar-brand">
+      <Link to="/" className="sidebar-back">
+        ← 계열사 목록
+      </Link>
+      <Link to={affiliateId ? `/company/${affiliateId}` : "/dashboard"} className="sidebar-brand">
         <span className="sidebar-brand-logo">SG</span>
         <span className="sidebar-brand-text">
           <span className="sidebar-brand-title">지표 대시보드</span>
-          <span className="sidebar-brand-sub">{affiliateName ?? "계열사 목록으로"}</span>
+          <span className="sidebar-brand-sub">{affiliateName ?? "전체 지표 보기"}</span>
         </span>
       </Link>
       {categories.map((category) => {
