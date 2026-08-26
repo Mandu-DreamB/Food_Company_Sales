@@ -1,6 +1,9 @@
+import logging
+
 from fastapi import APIRouter, HTTPException, Query
 
 from .config import missing_env
+from .dbchat import answer_question
 from .registry import (
     AFFILIATE_CATEGORY_INDICATOR_CATEGORIES,
     AFFILIATE_OVERVIEW_SOURCES,
@@ -11,7 +14,9 @@ from .registry import (
     Indicator,
 )
 from .store import read_affiliates, read_all_logs, read_briefing, read_indicator_briefing, read_stale_cache
-from .schemas import AffiliateList, BriefingResult, IndicatorResult, IndicatorWithBriefing
+from .schemas import AffiliateList, BriefingResult, DbChatAnswer, DbChatQuestion, IndicatorResult, IndicatorWithBriefing
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api")
 
@@ -132,3 +137,19 @@ def get_top_indicators(affiliate_id: str):
         results.append(IndicatorWithBriefing(**base.model_dump(), briefing=briefing))
 
     return results
+
+
+@router.post("/db-chat", response_model=DbChatAnswer)
+def db_chat(body: DbChatQuestion):
+    """자연어 질문을 읽기 전용 SQL로 바꿔 지표 DB를 조회하고 답한다 (dbchat.py 참고).
+    브리핑과 달리 미리 만들어 둘 수 없는 요청이라 이건 요청 경로에서 LLM을 호출한다."""
+    question = body.question.strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="question is required")
+    try:
+        return DbChatAnswer(**answer_question(question))
+    except ValueError as exc:
+        return DbChatAnswer(answer=str(exc))
+    except Exception as exc:
+        logger.warning("db-chat failed question=%s error=%s", question, exc)
+        raise HTTPException(status_code=502, detail="DB 챗봇 응답 생성에 실패했습니다.") from exc

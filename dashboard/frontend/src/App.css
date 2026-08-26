@@ -978,6 +978,61 @@
   z-index: 1000;
 }
 
+/* 챗봇이 만들어 준 차트 카드 - 관련 지표 카드와 같은 모양에 강조 테두리만 얹는다. */
+.chat-chart-card {
+  border: 1px solid var(--chat-brand);
+  box-shadow: 0 4px 20px rgba(235, 104, 52, 0.12);
+}
+
+.chat-chart-card .top-indicator-header {
+  position: relative;
+  padding-right: 36px;
+}
+
+.chat-chart-close {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.chat-chart-close:hover {
+  background: var(--tint);
+  color: var(--text-primary);
+}
+
+/* DB 챗봇은 화면 오른쪽 위. 패널이 버튼 아래로 열려야 하므로 기준점을 전부 뒤집는다. */
+.chat-widget-db {
+  top: 24px;
+  right: 24px;
+  bottom: auto;
+}
+
+.chat-widget-db .chat-panel {
+  top: 76px;
+  bottom: auto;
+  transform-origin: top right;
+  max-height: calc(100vh - 100px);
+}
+
+/* 접기 방향이 아래가 아니라 위이므로 화살표도 뒤집는다. */
+.chat-widget-db .chat-toggle-open .chat-toggle-icon-chevron {
+  transform: rotate(180deg) scale(1);
+}
+
+.chat-widget-db .chat-panel-avatar,
+.chat-widget-db .chat-avatar {
+  font-size: 13px;
+}
+
 .chat-toggle {
   position: relative;
   width: 60px;
@@ -1294,6 +1349,12 @@
   .chat-widget {
     right: 16px;
     bottom: 16px;
+  }
+
+  .chat-widget-db {
+    top: 16px;
+    right: 16px;
+    bottom: auto;
   }
 
   .chat-panel {

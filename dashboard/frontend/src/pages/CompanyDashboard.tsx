@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { getAffiliateBriefing, getTopIndicators, listAffiliates } from "../api/client";
-import type { BriefingResult, IndicatorWithBriefing } from "../api/types";
+import { askDbChat, getAffiliateBriefing, getTopIndicators, listAffiliates } from "../api/client";
+import type { BriefingResult, ChartResult, IndicatorWithBriefing } from "../api/types";
+import { ChartIcon, ChatWidget } from "../components/ChatWidget";
 import { MultiSeriesChart } from "../components/MultiSeriesChart";
 import { Spinner } from "../components/Spinner";
 
@@ -27,6 +28,25 @@ function Briefing({ affiliateId }: { affiliateId: string }) {
           {briefing.status === "error" && " · 최신 갱신 실패, 이전 브리핑을 보여줍니다"}
         </div>
       )}
+    </div>
+  );
+}
+
+/** 챗봇이 만들어 준 차트 카드. 관련 지표 카드와 같은 컴포넌트로 그려서 화면이 따로 놀지 않게 한다. */
+function ChatChartCard({ chart, onClose }: { chart: ChartResult; onClose: () => void }) {
+  return (
+    <div className="top-indicator-card chat-chart-card">
+      <div className="top-indicator-header">
+        <div className="top-indicator-title">{chart.title}</div>
+        <div className="top-indicator-meta">
+          챗봇이 만든 차트 · {chart.unit}
+          {chart.transform === "yoy" && " · 전년동기대비"}
+        </div>
+        <button type="button" className="chat-chart-close" onClick={onClose} aria-label="차트 닫기">
+          ×
+        </button>
+      </div>
+      <MultiSeriesChart series={chart.series} />
     </div>
   );
 }
@@ -120,6 +140,13 @@ function TopIndicatorCard({ source }: { source: IndicatorWithBriefing }) {
   );
 }
 
+const DB_QUICK_REPLIES = [
+  "WTI 유가 최근 값 알려줘",
+  "FAO 세계 식품가격지수 최근 6개월 추이 보여줘",
+  "지표 수집이 실패한 지표 있어?",
+  "FAO 식품가격지수 곡물·유지류 최근 3년 그래프 보여줘",
+];
+
 export function CompanyDashboard() {
   const { affiliateId } = useParams<{ affiliateId: string }>();
   const [name, setName] = useState<string | null>(null);
@@ -128,6 +155,7 @@ export function CompanyDashboard() {
   const [sources, setSources] = useState<IndicatorWithBriefing[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [chatChart, setChatChart] = useState<ChartResult | null>(null);
 
   useEffect(() => {
     if (!affiliateId) return;
@@ -143,6 +171,7 @@ export function CompanyDashboard() {
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
+    setChatChart(null);  // 계열사를 옮기면 이전 계열사 얘기로 만든 차트는 치운다
   }, [affiliateId]);
 
   if (loading) return <div className="page-state"><Spinner /></div>;
@@ -155,11 +184,22 @@ export function CompanyDashboard() {
       {name && overview && <CompanyOverview name={name} overview={overview} sources={overviewSources} />}
       {sources.length === 0 && <div className="page-state">관련된 지표가 아직 없습니다.</div>}
       <div className="top-indicator-stack">
+        {chatChart && <ChatChartCard chart={chatChart} onClose={() => setChatChart(null)} />}
         {sources.map((source) => (
           <TopIndicatorCard key={source.id} source={source} />
         ))}
       </div>
       {affiliateId && <Briefing affiliateId={affiliateId} />}
+      <ChatWidget
+        className="chat-widget-db"
+        ask={askDbChat}
+        title="지표 DB 챗봇"
+        subtitle="수집된 지표 데이터를 직접 조회해 답해요"
+        emptyHint="수집된 지표 데이터에 대해 물어보세요. 예시 질문을 눌러보세요."
+        quickReplies={DB_QUICK_REPLIES}
+        onChart={setChatChart}
+        icon={<ChartIcon />}
+      />
     </div>
   );
 }

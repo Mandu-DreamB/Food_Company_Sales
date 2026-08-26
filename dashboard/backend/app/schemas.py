@@ -54,3 +54,22 @@ class IndicatorWithBriefing(IndicatorResult):
     """계열사 상세 페이지의 '가장 연관된 지표' 카드용 — 지표 데이터 + 그 지표의 AI 요약."""
 
     briefing: Optional[BriefingResult] = None
+
+
+class DbChatQuestion(BaseModel):
+    question: str
+
+
+class ChartResult(BaseModel):
+    """DB 챗봇이 만든 차트. 스펙(어떤 지표/시리즈/기간)은 LLM이 정하지만 값은 서버가 DB에서 읽는다."""
+
+    title: str
+    unit: str
+    transform: str  # "none" | "yoy"
+    series: list[Series]
+
+
+class DbChatAnswer(BaseModel):
+    answer: str
+    sql: Optional[str] = None
+    chart: Optional[ChartResult] = None

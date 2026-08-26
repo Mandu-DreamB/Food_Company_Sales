@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, Float, DateTime, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, Integer, String, Date, Float, DateTime, Text, UniqueConstraint
 from .db import Base
 
 
@@ -70,3 +70,23 @@ class IndicatorBriefing(Base):
     generated_at = Column(DateTime(timezone=True), nullable=False)
     status = Column(String, nullable=False)
     error = Column(Text, nullable=True)
+
+
+class Correlation(Base):
+    """계열사 매출 × 지표 상관계수 (mandu/Eda/run_correlation.py 산출). survived=False거나 |trend_r|이 0.5를 넘으면 추세동조이므로 관계가 있다고 해석하면 안 된다."""
+
+    __tablename__ = "correlations"
+
+    affiliate_id = Column(String, primary_key=True)
+    indicator_id = Column(String, primary_key=True)
+    series_name = Column(String, primary_key=True)
+    level_r = Column(Float, nullable=True)        # 레벨(원계열) 피어슨
+    level_spearman = Column(Float, nullable=True)
+    n = Column(Integer, nullable=True)            # 레벨 상관의 표본 구간 수
+    change_r = Column(Float, nullable=True)       # 전기대비 변화율끼리의 피어슨
+    trend_r = Column(Float, nullable=True)        # 지표와 시간의 상관. 크면 그 지표는 시간의 대리변수다
+    yoy_r = Column(Float, nullable=True)          # 추세·계절성을 걷어낸 전년동기대비 상관
+    n_yoy = Column(Integer, nullable=True)
+    survived = Column(Boolean, nullable=True)     # YoY에서도 레벨과 같은 부호로 |r|>0.3인가
+    curated = Column(Boolean, nullable=False)     # registry의 업종 큐레이션에 포함된 지표인가
+    computed_at = Column(DateTime(timezone=True), nullable=False)
