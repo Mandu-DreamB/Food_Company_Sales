@@ -24,6 +24,11 @@ logger = logging.getLogger(__name__)
 
 MAX_ROWS = 200
 
+# 두 단계에 같은 모델을 쓸 이유가 없다. SQL 생성은 5개 모델이 전부 같은 결과를 냈고 추론을
+# 태워도 얻는 게 없었다(luna 17.4s/1812토큰 vs 5.4-mini 4.6s/740토큰, 결과 동일). 반면 결과를
+# 문장으로 옮기는 단계는 모델 체급이 그대로 답변 품질로 나타난다. 그래서 SQL만 싼 모델로 내린다.
+SQL_MODEL = "gpt-5.4-mini"
+
 _FORBIDDEN = re.compile(
     r"\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|copy|call|do|merge|vacuum)\b",
     re.IGNORECASE,
@@ -111,8 +116,9 @@ indicator_points에 들어 있는 indicator_id와 series_name:
 - 계열사와 지표를 잇는 다리는 correlations 테이블입니다. affiliates.id = correlations.affiliate_id,
   (correlations.indicator_id, correlations.series_name) = (indicator_points.indicator_id, indicator_points.series_name)로 조인하세요.
 - correlations의 상관계수는 "관계가 있다"는 증거가 아닙니다. 표본이 분기 18~26개뿐이라 귀무 기준선을
-  넘지 못했습니다. r을 인용할 때는 반드시 survived와 trend_r를 함께 언급하고, survived가 false거나
-  |trend_r| > 0.5면 "추세가 같이 움직인 것일 뿐 인과로 볼 수 없다"고 덧붙이세요.
+  넘지 못했습니다.
+- "상관이 높은 지표"를 묻는 질문에는 WHERE에 survived = TRUE AND ABS(trend_r) <= 0.5를 반드시 넣어
+  추세동조 지표를 걸러내세요. 그것들은 시간과 같이 움직였을 뿐이라 상위 목록에 올리면 사람을 오도합니다.
 - correlations에 없는 계열사(분석 대상이 아니었던 곳)는 그 사실을 그대로 말하세요.
 - indicator_points는 관측값 테이블이라 한 지표에 수백~수천 행입니다. 상관계수나 지표 목록만
   필요하면 correlations만 조회하세요. 조인하면 행이 폭발합니다. 실제 값이 필요할 때만 조인하고
@@ -149,6 +155,8 @@ JSON 하나만 출력하세요: {{"answer": "한국어 존댓말 답변", "chart
 {schema}
 
 답변 작성 규칙:
+- survived, trend_r, level_r 같은 컬럼 이름을 답변에 그대로 쓰지 마세요. 사용자는 DB 스키마를 모릅니다.
+  풀어서 "추세 검증 통과", "지표와 시간의 상관 0.98" 처럼 쓰세요.
 - SQL이 correlations 테이블을 건드렸다면(수치를 인용했든 안 했든) "영향을 미친다", "요인이다" 같은
   인과 표현을 쓰지 말고 "같이 움직였다" 정도로만 쓰세요. 그리고 표본이 분기 20여 개뿐이라 통계적으로
   확인된 관계는 아니라는 단서를 반드시 마지막에 한 문장 붙이세요."""
@@ -229,8 +237,7 @@ def answer_question(question: str) -> dict:
         raise RuntimeError("OPENAI_API_KEY가 설정되지 않았습니다.")
 
     raw = client.chat.completions.create(
-        model=BRIEFING_MODEL,
-        temperature=0,
+        model=SQL_MODEL,
         messages=[{"role": "user", "content": SQL_PROMPT.format(
             tables=_tables_prompt(), schema=_schema_prompt(), max_rows=MAX_ROWS, question=question)}],
     ).choices[0].message.content.strip()
@@ -245,7 +252,6 @@ def answer_question(question: str) -> dict:
 
     reply = client.chat.completions.create(
         model=BRIEFING_MODEL,
-        temperature=0.2,
         response_format={"type": "json_object"},
         messages=[{"role": "user", "content": ANSWER_PROMPT.format(
             question=question, schema=_schema_prompt(), sql=sql, row_count=len(rows),

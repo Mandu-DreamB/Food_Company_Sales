@@ -28,7 +28,8 @@ from .store import (
 logger = logging.getLogger(__name__)
 
 BRIEFING_TTL_SECONDS = 24 * 3600
-BRIEFING_MODEL = "gpt-4o-mini"
+# gpt-5.6-luna는 temperature를 받지 않는다(기본값 1만 허용). 호출부에서 빼둘 것.
+BRIEFING_MODEL = "gpt-5.6-luna"
 
 _client: OpenAI | None = None
 
@@ -108,7 +109,6 @@ def generate_affiliate_briefing(name: str, category: str) -> str:
     prompt = PROMPT_TEMPLATE.format(name=name, category=category, facts="\n".join(f"- {f}" for f in facts))
     response = client.chat.completions.create(
         model=BRIEFING_MODEL,
-        temperature=0.2,
         messages=[{"role": "user", "content": prompt}],
     )
     return response.choices[0].message.content.strip()
@@ -175,7 +175,6 @@ def generate_indicator_briefing(indicator_title: str, indicator_id: str) -> str:
     prompt = INDICATOR_PROMPT_TEMPLATE.format(title=indicator_title, facts="\n".join(f"- {f}" for f in facts))
     response = client.chat.completions.create(
         model=BRIEFING_MODEL,
-        temperature=0.2,
         messages=[{"role": "user", "content": prompt}],
     )
     return response.choices[0].message.content.strip()

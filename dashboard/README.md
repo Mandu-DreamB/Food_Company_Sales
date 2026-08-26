@@ -122,6 +122,16 @@ LLM 호출 2번, 쿼리 1번. 브리핑과 달리 미리 만들어 둘 수 없�
 - **안전장치**: 단일 SELECT/WITH만 허용(세미콜론·DML 키워드 거부), `SET TRANSACTION READ ONLY`,
   `statement_timeout 10s`, 결과 200행 상한. 앱 DB 계정 자체는 쓰기 권한이 있으므로 READ ONLY가
   마지막 방어선입니다. 가드 자체 검사는 `python -m app.dbchat`.
+- **모델**: 두 단계에 다른 모델을 쓴다. SQL 생성은 `gpt-5.4-mini`, 답변 작성과 AI 브리핑은
+  `gpt-5.6-luna`. 같은 질문으로 5개 모델을 재보니 SQL은 전부 동일한 결과를 냈고 추론을 태워도
+  얻는 게 없었다(luna 17.4초/1812토큰 vs 5.4-mini 4.6초/740토큰). 반면 결과를 문장으로 옮기는
+  단계는 체급이 그대로 답변 품질로 나타난다. 이 분리로 응답이 22.7초에서 10.3초로 줄었다.
+  참고: `gpt-5.6-luna`는 `temperature`를 받지 않는다(기본값 1만 허용).
+- **접근 토큰**: `.env`에 `APP_ACCESS_TOKEN`을 넣으면 이 엔드포인트만 `X-App-Token` 헤더를
+  요구한다. 설정하지 않으면(로컬 개발) 그냥 열린다. 지표 조회 API는 막지 않는다 - 여기만
+  요청 1건에 LLM을 2번 부르기 때문에, 막으려는 건 데이터 열람이 아니라 남이 우리 OpenAI
+  크레딧을 태우는 상황이다. 프론트는 토큰을 번들에 넣지 않고(`VITE_` 변수는 누구나 devtools에서
+  읽을 수 있다) 첫 401에서 한 번 입력받아 브라우저 `localStorage`에만 저장한다.
 - **차트**: 답변과 함께 `{indicator_id, series_name, from, to, transform}` 스펙을 JSON으로 받고,
   **값은 서버가 DB에서 직접 읽어** 채웁니다(LLM이 숫자를 지어낼 수 없음). 프론트는 그걸 관련 지표
   카드와 같은 `MultiSeriesChart`로 대시보드 맨 위에 카드로 띄웁니다. `transform: "yoy"`는
