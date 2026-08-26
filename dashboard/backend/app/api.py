@@ -168,5 +168,11 @@ def db_chat(body: DbChatQuestion, x_app_token: str | None = Header(default=None)
     except ValueError as exc:
         return DbChatAnswer(answer=str(exc))
     except Exception as exc:
-        logger.warning("db-chat failed question=%s error=%s", question, exc)
-        raise HTTPException(status_code=502, detail="DB 챗봇 응답 생성에 실패했습니다.") from exc
+        # 배포 환경에서는 이 로그가 원인을 알 수 있는 유일한 경로다. 메시지만 남기면
+        # "KeyError: 'x'" 같은 게 어디서 났는지 알 수 없어서 트레이스백까지 남긴다.
+        logger.exception("db-chat failed question=%s", question)
+        # 예외 종류와 메시지를 detail에 담는다. 이 엔드포인트는 APP_ACCESS_TOKEN 뒤에 있고
+        # 사내 2인용이라, 원인을 못 보고 502만 보는 쪽이 훨씬 손해다.
+        raise HTTPException(
+            status_code=502, detail=f"DB 챗봇 응답 생성 실패: {type(exc).__name__}: {exc}"
+        ) from exc

@@ -80,6 +80,14 @@ export async function askDbChat(question: string): Promise<DbChatAnswer> {
       throw new Error("접근 토큰이 올바르지 않습니다.");
     }
   }
-  if (!res.ok) throw new Error(`DB 챗봇 응답을 받지 못했습니다 (${res.status})`);
+  if (!res.ok) {
+    // 백엔드가 낸 502에는 detail이 있고, Render가 낸 Bad Gateway에는 없다. 이 둘을
+    // 구분할 수 있어야 어디를 봐야 할지 정해진다.
+    const detail = await res
+      .json()
+      .then((d: { detail?: string }) => d.detail)
+      .catch(() => null);
+    throw new Error(detail ?? `DB 챗봇 응답을 받지 못했습니다 (${res.status})`);
+  }
   return res.json();
 }
