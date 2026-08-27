@@ -6,6 +6,126 @@
 
 ---
 
+## 아키텍처
+
+### 전체 구성
+
+프론트엔드 하나에 백엔드가 둘입니다. 지표 대시보드 백엔드는 PostgreSQL(Neon)을,
+RAG 백엔드는 Chroma 벡터스토어를 각각 들고 있고 서로 데이터를 공유하지 않습니다.
+챗봇 위젯도 이 둘에 각각 하나씩 붙습니다.
+
+```mermaid
+flowchart LR
+    subgraph Browser["브라우저 - React + Vite"]
+        Pages["페이지<br/>계열사 목록 · 대시보드<br/>지표 상세"]
+        ChatDb["지표 DB 챗봇 위젯"]
+        ChatRag["RAG 챗봇 위젯"]
+    end
+
+    subgraph Back["지표 대시보드 백엔드 - FastAPI"]
+        API["REST API"]
+        DbChat["dbchat.py<br/>text2sql"]
+        Sched["APScheduler"]
+    end
+
+    subgraph RagSvc["RAG 백엔드 - FastAPI"]
+        RagApi["POST /chat"]
+    end
+
+    PG[("PostgreSQL<br/>Neon")]
+    Chroma[("Chroma<br/>벡터스토어")]
+    Ext["외부 지표 API 9종<br/>EIA · KOSIS · ECOS · FRED<br/>data.go.kr · R-ONE · yfinance · FAO"]
+    LLM["OpenAI API"]
+
+    Pages --> API
+    ChatDb --> DbChat
+    ChatRag --> RagApi
+
+    API --> PG
+    DbChat --> PG
+    DbChat --> LLM
+    Sched -->|"15분 주기"| Ext
+    Sched -->|"24시간 주기"| LLM
+    Sched -->|"수집 결과 · 브리핑 저장"| PG
+    RagApi --> Chroma
+    RagApi --> LLM
+```
+
+### RAG 챗봇 (공시 문서 기반)
+
+DART 공시 XML을 청크로 쪼개 Chroma에 넣어두고, 질문이 오면 **벡터 검색과 BM25 키워드 검색을
+따로 돌려 RRF로 합칩니다.** 의미 검색만으로는 "매출실적" 같은 정확한 용어를, 키워드 검색만으로는
+문맥을 놓치기 때문입니다.
+
+```mermaid
+flowchart TB
+    subgraph Ingest["문서 수집 - ingest.py, 최초 1회"]
+        Xml["DART 공시 XML"] --> Parser["dart_parser.py<br/>섹션 분리"]
+        Parser --> Chunk["컨텍스트 헤더 부착 + 청킹<br/>800자 / 100자 겹침<br/>표는 행 단위로 분할"]
+        Chunk --> Embed["text-embedding-3-small"]
+        Embed --> Store[("Chroma")]
+    end
+
+    subgraph Query["질의 - query.py"]
+        Q["질문"] --> Filter["회사명 감지"]
+        Filter --> Two["검색어 2벌 생성<br/>원문 + 회사명 제거본"]
+        Two --> Vec["벡터 검색<br/>회사 필터 적용, pool 15"]
+        Two --> BM["BM25 검색<br/>한글 bigram 토크나이즈"]
+        Vec --> RRF["RRF 병합<br/>rrf_k 60"]
+        BM --> RRF
+        RRF --> TopK["상위 8개 청크"]
+        TopK --> Ans["gpt-4o-mini<br/>temperature 0"]
+        Ans --> Out["답변"]
+        Filter -->|"회사명 없이<br/>여러 회사가 섞이면"| Ask["어느 회사인지 되물음"]
+        Ans -->|"근거 없어 모른다고 하면"| NotFound["안내 문구로 치환"]
+    end
+
+    Store -.->|"검색 대상"| Vec
+    Store -.->|"검색 대상"| BM
+```
+
+### 지표 DB 챗봇 (text2sql + 차트 생성)
+
+자연어를 **읽기 전용 SQL 한 문장**으로 바꿔 실행합니다. 차트를 그릴 때도 LLM은 "무엇을 그릴지"
+스펙만 내고 **값은 서버가 DB에서 다시 읽습니다** — LLM이 숫자를 지어낼 경로를 없애기 위해서입니다.
+단계마다 다른 모델을 씁니다. SQL 생성은 체급을 올려도 결과가 같아서 싼 모델로 내렸고,
+결과를 문장으로 옮기는 단계만 상위 모델을 씁니다.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as 사용자
+    participant W as 챗 위젯
+    participant A as POST /api/db-chat
+    participant M1 as gpt-5.4-mini
+    participant G as SQL 가드
+    participant DB as PostgreSQL
+    participant M2 as gpt-5.6-luna
+
+    U->>W: 자연어 질문
+    W->>A: X-App-Token 헤더 첨부
+    A->>A: 토큰 검증 - compare_digest
+    A->>M1: 스키마 프롬프트 + 질문
+    Note over M1: 스키마는 models.py 메타데이터에서 생성<br/>+ 지표 목록 + series_name + status 실제 값
+    M1-->>A: SELECT 문 1개
+    A->>G: 단일 SELECT / WITH 인지 검사
+    Note over G: 세미콜론 · DML 키워드 거부
+    G->>DB: READ ONLY 트랜잭션<br/>statement_timeout 10초
+    DB-->>A: 최대 200행
+    A->>M2: 질문 + 실행한 SQL + 결과
+    M2-->>A: 답변 + 차트 스펙 - JSON
+    A->>DB: 차트 스펙대로 시계열 재조회
+    Note over A,DB: 값은 서버가 읽는다<br/>LLM이 숫자를 지어낼 경로 없음
+    A-->>W: 답변 + 실제 시계열
+    W->>W: MultiSeriesChart로 대시보드에 카드 추가
+```
+
+계열사와 지표를 잇는 유일한 DB 컬럼은 `correlations` 테이블입니다. 다만 이 상관계수는 관계의
+증거가 아니라서(표본이 분기 18~26개뿐이라 귀무 기준선 미달), `level_r`과 함께 `trend_r`·`yoy_r`·
+`survived`를 저장하고 프롬프트가 인과 표현을 금지합니다.
+
+---
+
 ## 진행 상황
 
 | 단계 | 상태 | 내용 |
