@@ -1,8 +1,6 @@
 import logging
-import os
-import secrets
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from .config import missing_env
 from .dbchat import answer_question
@@ -141,23 +139,8 @@ def get_top_indicators(affiliate_id: str):
     return results
 
 
-def _check_token(supplied: str | None) -> None:
-    """APP_ACCESS_TOKEN이 설정돼 있으면 그 값과 일치하는 X-App-Token 헤더를 요구한다.
-    설정 안 돼 있으면(로컬 개발) 그냥 통과시킨다.
-
-    지표 조회 API는 열어 둔 채 이 엔드포인트만 막는다. 여기만 요청 1건에 LLM을 2번 부르기
-    때문에, 막고 싶은 건 데이터 열람이 아니라 남이 우리 OpenAI 크레딧을 태우는 상황이다."""
-    expected = os.getenv("APP_ACCESS_TOKEN", "").strip()
-    if not expected:
-        return
-    # 문자열 == 비교는 앞에서부터 다르면 바로 끝나서 응답 시간으로 토큰을 한 글자씩 맞출 수 있다.
-    if not supplied or not secrets.compare_digest(supplied, expected):
-        raise HTTPException(status_code=401, detail="접근 토큰이 필요합니다.")
-
-
 @router.post("/db-chat", response_model=DbChatAnswer)
-def db_chat(body: DbChatQuestion, x_app_token: str | None = Header(default=None)):
-    _check_token(x_app_token)
+def db_chat(body: DbChatQuestion):
     """자연어 질문을 읽기 전용 SQL로 바꿔 지표 DB를 조회하고 답한다 (dbchat.py 참고).
     브리핑과 달리 미리 만들어 둘 수 없는 요청이라 이건 요청 경로에서 LLM을 호출한다."""
     question = body.question.strip()
@@ -171,8 +154,4 @@ def db_chat(body: DbChatQuestion, x_app_token: str | None = Header(default=None)
         # 배포 환경에서는 이 로그가 원인을 알 수 있는 유일한 경로다. 메시지만 남기면
         # "KeyError: 'x'" 같은 게 어디서 났는지 알 수 없어서 트레이스백까지 남긴다.
         logger.exception("db-chat failed question=%s", question)
-        # 예외 종류와 메시지를 detail에 담는다. 이 엔드포인트는 APP_ACCESS_TOKEN 뒤에 있고
-        # 사내 2인용이라, 원인을 못 보고 502만 보는 쪽이 훨씬 손해다.
-        raise HTTPException(
-            status_code=502, detail=f"DB 챗봇 응답 생성 실패: {type(exc).__name__}: {exc}"
-        ) from exc
+        raise HTTPException(status_code=502, detail="DB 챗봇 응답 생성에 실패했습니다.") from exc
